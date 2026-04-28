@@ -40,13 +40,18 @@ function addRipple(e: React.MouseEvent<HTMLButtonElement>) {
 
 export default function Layout({ activeTab, onTabChange, children, session, onSessionChange, onShowAuth, onShowSubscription }: LayoutProps) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const menuRef    = useRef<HTMLDivElement>(null)
+  const menuRefMob = useRef<HTMLDivElement>(null)
   const premium = isPremium(session)
 
-  // Close dropdown on outside click
+  // Close dropdown on outside click (both desktop + mobile ref)
   useEffect(() => {
     function handler(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+      const t = e.target as Node
+      if (
+        menuRef.current    && !menuRef.current.contains(t) &&
+        menuRefMob.current && !menuRefMob.current.contains(t)
+      ) setMenuOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -98,8 +103,8 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
                 ))}
               </nav>
 
-              {/* User area */}
-              <div style={{ position: 'relative' }} ref={menuRef}>
+              {/* User area — desktop only */}
+              <div className="sm-hide" style={{ position: 'relative' }} ref={menuRef}>
                 {session ? (
                   <button
                     className="user-avatar spring-in"
@@ -171,7 +176,7 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
                 {currentTab?.premium && !premium && <span style={{ fontSize: 10, marginLeft: 4 }}>💎</span>}
               </span>
               {session ? (
-                <div ref={menuRef} style={{ position: 'relative' }}>
+                <div ref={menuRefMob} style={{ position: 'relative' }}>
                   <button
                     className="user-avatar"
                     style={{ background: session.avatarColor, width: 28, height: 28, fontSize: 11 }}
