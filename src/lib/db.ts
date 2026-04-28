@@ -1,0 +1,176 @@
+import { supabase, supabaseReady } from './supabase'
+import { LotteryDraw, DreamSelection, AstrologyProfile } from '../types'
+import { lotteryHistory } from '../data/lotteryHistory'
+
+// ── Lottery Draws ───────────────────────────────────────────────
+export async function getDraws(): Promise<LotteryDraw[]> {
+  if (!supabaseReady) {
+    const raw = localStorage.getItem('lottomind_draws')
+    return raw ? JSON.parse(raw) : lotteryHistory
+  }
+  const { data, error } = await supabase
+    .from('lottery_draws')
+    .select('*')
+    .order('draw_date', { ascending: true })
+  if (error || !data) return lotteryHistory
+  return data.map(r => ({
+    id: r.id,
+    date: r.draw_date,
+    firstPrize: r.first_prize,
+    threeDigitFront: r.three_digit_front,
+    threeDigitBack: r.three_digit_back,
+    twoDigitBack: r.two_digit_back,
+  }))
+}
+
+export async function saveDraws(draws: LotteryDraw[]): Promise<void> {
+  if (!supabaseReady) {
+    localStorage.setItem('lottomind_draws', JSON.stringify(draws))
+    return
+  }
+  const rows = draws.map(d => ({
+    id: d.id,
+    draw_date: d.date,
+    first_prize: d.firstPrize,
+    three_digit_front: d.threeDigitFront,
+    three_digit_back: d.threeDigitBack,
+    two_digit_back: d.twoDigitBack,
+  }))
+  await supabase.from('lottery_draws').upsert(rows, { onConflict: 'id' })
+}
+
+export async function deleteDraw(id: string): Promise<void> {
+  if (!supabaseReady) return
+  await supabase.from('lottery_draws').delete().eq('id', id)
+}
+
+// ── Dream Selections (per-user) ────────────────────────────────
+export async function getDreams(userId?: string): Promise<DreamSelection[]> {
+  const key = userId ? `lottomind_dreams_${userId}` : 'lottomind_dreams_anon'
+  if (!supabaseReady || !userId) {
+    const raw = localStorage.getItem(key)
+    return raw ? JSON.parse(raw) : []
+  }
+  const { data, error } = await supabase
+    .from('user_dreams')
+    .select('*')
+    .eq('user_id', userId)
+  if (error || !data) return []
+  return data.map(r => ({
+    dreamId: r.dream_id,
+    thaiName: r.thai_name,
+    twoDigit: r.two_digit,
+    threeDigit: r.three_digit,
+    confidence: r.confidence,
+  }))
+}
+
+export async function saveDreams(dreams: DreamSelection[], userId?: string): Promise<void> {
+  const key = userId ? `lottomind_dreams_${userId}` : 'lottomind_dreams_anon'
+  if (!supabaseReady || !userId) {
+    localStorage.setItem(key, JSON.stringify(dreams))
+    return
+  }
+  await supabase.from('user_dreams').delete().eq('user_id', userId)
+  if (dreams.length > 0) {
+    await supabase.from('user_dreams').insert(
+      dreams.map(d => ({
+        user_id: userId,
+        dream_id: d.dreamId,
+        thai_name: d.thaiName,
+        two_digit: d.twoDigit,
+        three_digit: d.threeDigit,
+        confidence: d.confidence,
+      }))
+    )
+  }
+}
+
+// ── Astrology Profile (per-user) ────────────────────────────────
+export async function getAstrology(userId?: string): Promise<AstrologyProfile | null> {
+  const key = userId ? `lottomind_astro_${userId}` : 'lottomind_astro_anon'
+  if (!supabaseReady || !userId) {
+    const raw = localStorage.getItem(key)
+    return raw ? JSON.parse(raw) : null
+  }
+  const { data } = await supabase
+    .from('user_astrology')
+    .select('profile_data')
+    .eq('user_id', userId)
+    .single()
+  return data?.profile_data ?? null
+}
+
+export async function saveAstrology(profile: AstrologyProfile | null, userId?: string): Promise<void> {
+  const key = userId ? `lottomind_astro_${userId}` : 'lottomind_astro_anon'
+  if (!supabaseReady || !userId) {
+    localStorage.setItem(key, JSON.stringify(profile))
+    return
+  }
+  if (!profile) {
+    await supabase.from('user_astrology').delete().eq('user_id', userId)
+    return
+  }
+  await supabase.from('user_astrology').upsert({
+    user_id: userId,
+    birth_date: profile.birthDate,
+    profile_data: profile,
+    updated_at: new Date().toISOString(),
+  })
+}
+
+// ── Subscription status ─────────────────────────────────────────
+export async function getSubscription(userId: string) {
+  if (!supabaseReady) return null
+  const { data } = await supabase
+    .from('subscriptions')
+    .select('*')
+    .eq('user_id', userId)
+    .single()
+  return data
+}
+
+// ── Admin: all users + subscriptions ───────────────────────────
+export async function adminGetUsers() {
+  const { data } = await supabase
+    .from('profiles')
+    .select(`
+      id, username, avatar_color, is_admin, created_at,
+      subscriptions (status, started_at, expires_at)
+    `)
+    .order('created_at', { ascending: false })
+  return data ?? []
+}
+
+export async function adminGetPayments() {
+  const { data } = await supabase
+    .from('payments')
+    .select(`
+      id, amount, currency, status, method, omise_charge_id, created_at,
+      profiles!payments_user_id_fkey (username)
+    `)
+    .order('created_at', { ascending: false })
+    .limit(200)
+  return data ?? []
+}
+
+export async function adminSetPremium(userId: string, days: number) {
+  const exp = new Date()
+  exp.setDate(exp.getDate() + days)
+  await supabase.from('subscriptions').upsert({
+    user_id: userId,
+    status: 'premium',
+    started_at: new Date().toISOString(),
+    expires_at: exp.toISOString(),
+    updated_at: new Date().toISOString(),
+  })
+}
+
+export async function adminRevokeSubscription(userId: string) {
+  await supabase.from('subscriptions').upsert({
+    user_id: userId,
+    status: 'free',
+    expires_at: null,
+    updated_at: new Date().toISOString(),
+  })
+}
