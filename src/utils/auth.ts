@@ -48,13 +48,10 @@ export function incrementRateLimit() {
   } catch {}
 }
 
-// ── Premium check ───────────────────────────────────────────────
-export function isPremium(session: UserSession | null): boolean {
-  if (!session) return false
-  const { status, expiresAt } = session.subscription
-  if (status !== 'premium') return false
-  if (!expiresAt) return false
-  return new Date(expiresAt) > new Date()
+// ── Premium check — ทุก feature ฟรี, donate เพื่อสนับสนุน ─────
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function isPremium(_session: UserSession | null): boolean {
+  return true
 }
 
 // ── Convert Supabase session → app UserSession ──────────────────

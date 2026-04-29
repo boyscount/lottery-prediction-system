@@ -70,7 +70,6 @@ export default function App() {
   function handleAuthSuccess(s: UserSession) {
     setSession(s)
     setShowAuth(false)
-    if (!isPremium(s)) setShowSub(true)
   }
 
   function handleSubSuccess(s: UserSession) {

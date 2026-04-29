@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Home, Target, Moon, BarChart2, Star, BookOpen, LogOut, Crown, LogIn, Shield } from 'lucide-react'
+import { Home, Target, Moon, BarChart2, Star, BookOpen, LogOut, Heart, LogIn, Shield } from 'lucide-react'
 import { TabType, UserSession } from '../types'
-import { logoutUser, isPremium } from '../utils/auth'
+import { logoutUser } from '../utils/auth'
 import Logo from './Logo'
 import clsx from 'clsx'
 
@@ -42,7 +42,6 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef    = useRef<HTMLDivElement>(null)
   const menuRefMob = useRef<HTMLDivElement>(null)
-  const premium = isPremium(session)
 
   // Close dropdown on outside click (both desktop + mobile ref)
   useEffect(() => {
@@ -96,9 +95,6 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
                   >
                     <tab.Icon size={12} />
                     {tab.label}
-                    {tab.premium && !premium && (
-                      <span style={{ fontSize: 9, marginLeft: 2 }}>💎</span>
-                    )}
                   </button>
                 ))}
               </nav>
@@ -138,29 +134,18 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
                           <div style={{ fontSize: 11, color: '#64748b' }}>{session.email}</div>
                         </div>
                       </div>
-                      {/* Subscription status */}
                       <div style={{ marginTop: 10 }}>
-                        {premium ? (
-                          <span className="badge badge-premium" style={{ fontSize: 11 }}>
-                            💎 Premium · หมดอายุ {session.subscription.expiresAt
-                              ? new Date(session.subscription.expiresAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
-                              : '-'}
-                          </span>
-                        ) : (
-                          <span className="badge badge-ghost" style={{ fontSize: 11 }}>
-                            ⬜ สมาชิกฟรี
-                          </span>
-                        )}
+                        <span className="badge badge-ghost" style={{ fontSize: 11 }}>
+                          ✅ ใช้ฟรีทุก feature
+                        </span>
                       </div>
                     </div>
 
                     {/* Actions */}
-                    {!premium && (
-                      <button className="user-dropdown-item" onClick={() => { setMenuOpen(false); onShowSubscription() }}>
-                        <Crown size={14} style={{ color: '#fbbf24' }} />
-                        <span style={{ color: '#fbbf24' }}>อัปเกรด Premium 59 บาท/เดือน</span>
-                      </button>
-                    )}
+                    <button className="user-dropdown-item" onClick={() => { setMenuOpen(false); onShowSubscription() }}>
+                      <Heart size={14} style={{ color: '#f472b6' }} />
+                      <span style={{ color: '#f472b6' }}>สนับสนุนผู้พัฒนา 💜</span>
+                    </button>
                     <button className="user-dropdown-item" onClick={handleLogout}>
                       <LogOut size={14} /> ออกจากระบบ
                     </button>
@@ -173,7 +158,6 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
             <div className="sm-show-only" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: '#c4b5fd' }}>
                 {currentTab?.label}
-                {currentTab?.premium && !premium && <span style={{ fontSize: 10, marginLeft: 4 }}>💎</span>}
               </span>
               {session ? (
                 <div ref={menuRefMob} style={{ position: 'relative' }}>
@@ -188,16 +172,12 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
                     <div className="user-dropdown glass" onClick={() => setMenuOpen(false)}>
                       <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                         <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 13 }}>{session.username}</div>
-                        <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
-                          {premium ? '💎 Premium' : '⬜ สมาชิกฟรี'}
-                        </div>
+                        <div style={{ fontSize: 10, color: '#4ade80', marginTop: 2 }}>✅ ใช้ฟรีทุก feature</div>
                       </div>
-                      {!premium && (
-                        <button className="user-dropdown-item" onClick={() => { setMenuOpen(false); onShowSubscription() }}>
-                          <Crown size={13} style={{ color: '#fbbf24' }} />
-                          <span style={{ color: '#fbbf24', fontSize: 12 }}>อัปเกรด Premium</span>
-                        </button>
-                      )}
+                      <button className="user-dropdown-item" onClick={() => { setMenuOpen(false); onShowSubscription() }}>
+                        <Heart size={13} style={{ color: '#f472b6' }} />
+                        <span style={{ color: '#f472b6', fontSize: 12 }}>สนับสนุนผู้พัฒนา 💜</span>
+                      </button>
                       <button className="user-dropdown-item" onClick={handleLogout}>
                         <LogOut size={13} /> ออกจากระบบ
                       </button>
@@ -247,10 +227,7 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
             style={{ position: 'relative', overflow: 'hidden' }}
           >
             <tab.Icon size={22} className="bnav-ic" />
-            <span className="bnav-lbl">
-              {tab.short}
-              {tab.premium && !premium && <span style={{ fontSize: 7, verticalAlign: 'super' }}>💎</span>}
-            </span>
+            <span className="bnav-lbl">{tab.short}</span>
           </button>
         ))}
       </nav>
