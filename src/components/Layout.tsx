@@ -100,7 +100,16 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
               </nav>
 
               {/* User area — desktop only */}
-              <div className="sm-hide" style={{ position: 'relative' }} ref={menuRef}>
+              <div className="sm-hide" style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8 }} ref={menuRef}>
+                {/* Donate button — always visible */}
+                <button
+                  onClick={onShowSubscription}
+                  className="btn-ghost"
+                  style={{ padding: '7px 12px', fontSize: 12, borderRadius: 10, display: 'flex', alignItems: 'center', gap: 5, color: '#f472b6', borderColor: 'rgba(244,114,182,0.3)' }}
+                >
+                  <Heart size={13} /> สนับสนุน
+                </button>
+
                 {session ? (
                   <button
                     className="user-avatar spring-in"
@@ -142,10 +151,6 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
                     </div>
 
                     {/* Actions */}
-                    <button className="user-dropdown-item" onClick={() => { setMenuOpen(false); onShowSubscription() }}>
-                      <Heart size={14} style={{ color: '#f472b6' }} />
-                      <span style={{ color: '#f472b6' }}>สนับสนุนผู้พัฒนา 💜</span>
-                    </button>
                     <button className="user-dropdown-item" onClick={handleLogout}>
                       <LogOut size={14} /> ออกจากระบบ
                     </button>
@@ -155,10 +160,21 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
             </div>
 
             {/* Mobile: current tab label + user button */}
-            <div className="sm-show-only" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div className="sm-show-only" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: '#c4b5fd' }}>
                 {currentTab?.label}
               </span>
+              {/* Donate button — always visible on mobile */}
+              <button
+                onClick={onShowSubscription}
+                style={{
+                  background: 'rgba(244,114,182,0.12)', border: '1px solid rgba(244,114,182,0.3)',
+                  borderRadius: 8, padding: '4px 9px', fontSize: 11, color: '#f9a8d4', cursor: 'pointer',
+                  fontFamily: 'Sarabun, sans-serif', display: 'flex', alignItems: 'center', gap: 4,
+                }}
+              >
+                <Heart size={11} /> สนับสนุน
+              </button>
               {session ? (
                 <div ref={menuRefMob} style={{ position: 'relative' }}>
                   <button
@@ -174,10 +190,6 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
                         <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 13 }}>{session.username}</div>
                         <div style={{ fontSize: 10, color: '#4ade80', marginTop: 2 }}>✅ ใช้ฟรีทุก feature</div>
                       </div>
-                      <button className="user-dropdown-item" onClick={() => { setMenuOpen(false); onShowSubscription() }}>
-                        <Heart size={13} style={{ color: '#f472b6' }} />
-                        <span style={{ color: '#f472b6', fontSize: 12 }}>สนับสนุนผู้พัฒนา 💜</span>
-                      </button>
                       <button className="user-dropdown-item" onClick={handleLogout}>
                         <LogOut size={13} /> ออกจากระบบ
                       </button>
