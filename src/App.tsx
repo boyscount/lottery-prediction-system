@@ -202,17 +202,8 @@ export default function App() {
         />
       )}
 
-      {showSub && session && (
+      {showSub && (
         <SubscriptionModal
-          session={session}
-          onSuccess={handleSubSuccess}
-          onClose={() => setShowSub(false)}
-        />
-      )}
-      {showSub && !session && (
-        <AuthModal
-          defaultMode="register"
-          onSuccess={s => { setSession(s); setShowSub(true) }}
           onClose={() => setShowSub(false)}
         />
       )}
