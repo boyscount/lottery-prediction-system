@@ -1,20 +1,16 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts'
-import { LotteryDraw, DreamSelection, AstrologyProfile, PredictionResult, UserSession } from '../types'
+import { LotteryDraw, DreamSelection, AstrologyProfile, PredictionResult } from '../types'
 import { generatePrediction } from '../utils/prediction'
 import { getNextDrawDate } from '../data/lotteryHistory'
-import { isPremium } from '../utils/auth'
 import clsx from 'clsx'
 
 interface Props {
   draws: LotteryDraw[]
   dreamSelections: DreamSelection[]
   astrologyProfile: AstrologyProfile | null
-  session: UserSession | null
   onNavigateDream: () => void
   onNavigateAstrology: () => void
-  onShowAuth: () => void
-  onShowSubscription: () => void
 }
 
 type PredictType = '2digit' | '3digit' | '6digit'
@@ -81,117 +77,13 @@ function FactorBar({ label, value, color }: { label: string; value: number; colo
   )
 }
 
-// ── Paywall locked state ───────────────────────────────────────
-function PremiumRequired({ session, onLogin, onUpgrade }: {
-  session: UserSession | null
-  onLogin: () => void
-  onUpgrade: () => void
-}) {
-  return (
-    <div className="gb spring-in" style={{ borderRadius: 24, overflow: 'hidden' }}>
-      {/* Header gradient */}
-      <div style={{
-        padding: '32px 24px 24px',
-        background: 'linear-gradient(160deg, rgba(124,58,237,0.15) 0%, rgba(6,182,212,0.07) 100%)',
-        textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)',
-      }}>
-        <div style={{
-          width: 72, height: 72, borderRadius: '50%', margin: '0 auto 16px',
-          background: 'radial-gradient(circle at 38% 32%, rgba(245,158,11,0.35), rgba(124,58,237,0.25))',
-          border: '1.5px solid rgba(245,158,11,0.45)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32,
-          boxShadow: '0 0 32px rgba(245,158,11,0.2), 0 0 64px rgba(124,58,237,0.15)',
-          animation: 'pulseGlow 3s ease-in-out infinite',
-        }}>🔒</div>
-        <div style={{ fontWeight: 800, color: '#e2e8f0', fontSize: 18, marginBottom: 6 }}>
-          ฟีเจอร์สำหรับสมาชิก Premium
-        </div>
-        <p style={{ fontSize: 13, color: '#64748b', lineHeight: 1.7 }}>
-          ปลดล็อกการทำนายเลขด้วย AI สถิติ + ความฝัน + โหราศาสตร์<br/>รวมกันเพื่อความแม่นยำสูงสุด
-        </p>
-      </div>
-
-      {/* Blurred fake preview */}
-      <div style={{ position: 'relative', overflow: 'hidden' }}>
-        <div style={{ filter: 'blur(7px)', opacity: 0.35, pointerEvents: 'none', userSelect: 'none', padding: '20px 24px' }}>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            {['🎰 2 ตัว','🎲 3 ตัว','🏆 6 ตัว'].map(t => (
-              <div key={t} style={{ flex: 1, padding: '8px 4px', borderRadius: 12, background: 'rgba(124,58,237,0.25)', textAlign: 'center', fontSize: 12, color: '#c4b5fd' }}>{t}</div>
-            ))}
-          </div>
-          {[
-            { num: '47', conf: 82, color: '#fbbf24' },
-            { num: '13', conf: 71, color: '#67e8f9' },
-            { num: '89', conf: 63, color: '#c4b5fd' },
-          ].map((item, i) => (
-            <div key={i} style={{
-              padding: '14px 16px', borderRadius: i === 0 ? 18 : 14, marginBottom: 8,
-              background: i === 0 ? 'rgba(245,158,11,0.08)' : 'rgba(255,255,255,0.03)',
-              border: `1px solid ${i === 0 ? 'rgba(245,158,11,0.25)' : 'rgba(255,255,255,0.06)'}`,
-              display: 'flex', alignItems: 'center', gap: 14,
-            }}>
-              <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(245,158,11,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#fbbf24' }}>{i === 0 ? '★' : i + 1}</div>
-              <div className={`ball b-${i === 0 ? 'xl' : 'lg'} b-purple nf-bold`}>{item.num}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 11, color: item.color, fontWeight: 700, marginBottom: 4 }}>ความเชื่อมั่น {item.conf}%</div>
-                <div style={{ height: 4, borderRadius: 4, background: 'rgba(255,255,255,0.06)' }}>
-                  <div style={{ width: `${item.conf}%`, height: '100%', borderRadius: 4, background: item.color, opacity: 0.6 }} />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-        {/* Frosted "reveal" gradient */}
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: 'linear-gradient(to bottom, transparent 0%, rgba(2,8,20,0.9) 85%)',
-          pointerEvents: 'none',
-        }} />
-      </div>
-
-      {/* CTA */}
-      <div style={{ padding: '0 24px 28px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {/* Feature pills */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
-          {['🔮 ทำนาย 2/3/6 ตัว','📊 สถิติเชิงลึก','⭐ โหราศาสตร์','💭 เลขจากฝัน'].map(f => (
-            <span key={f} className="badge badge-ghost" style={{ fontSize: 11 }}>{f}</span>
-          ))}
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 4 }}>
-          <span style={{ fontSize: 28, fontFamily: 'Space Grotesk', fontWeight: 800, color: '#fbbf24' }}>59</span>
-          <span style={{ fontSize: 13, color: '#92400e' }}>บาท / เดือน</span>
-        </div>
-
-        <button onClick={onUpgrade} className="btn-primary cta-ring press"
-          style={{ borderRadius: 16, padding: '15px 24px', fontSize: 16 }}>
-          💎 สมัครสมาชิก Premium
-        </button>
-        {!session && (
-          <button onClick={onLogin}
-            style={{
-              background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 14, padding: '12px 24px', fontSize: 14, color: '#94a3b8',
-              cursor: 'pointer', fontFamily: 'Sarabun, sans-serif', transition: 'all 0.2s',
-            }}
-            className="press"
-          >
-            🔑 มีบัญชีอยู่แล้ว? เข้าสู่ระบบ
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
 // ── Main component ─────────────────────────────────────────────
-export default function Predictor({ draws, dreamSelections, astrologyProfile, session, onNavigateDream, onNavigateAstrology, onShowAuth, onShowSubscription }: Props) {
+export default function Predictor({ draws, dreamSelections, astrologyProfile, onNavigateDream, onNavigateAstrology }: Props) {
   const [result, setResult]       = useState<PredictionResult | null>(null)
   const [loading, setLoading]     = useState(false)
   const [activeType, setActiveType] = useState<PredictType>('2digit')
   const [visible, setVisible]     = useState(false)
   const nextDraw = getNextDrawDate()
-  const premium  = isPremium(session)
 
   // Track viewport for responsive layout
   const [isWide, setIsWide] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 768 : false)
@@ -202,7 +94,6 @@ export default function Predictor({ draws, dreamSelections, astrologyProfile, se
   }, [])
 
   function runPrediction() {
-    if (!premium) return
     setLoading(true)
     setVisible(false)
     setTimeout(() => {
@@ -250,7 +141,7 @@ export default function Predictor({ draws, dreamSelections, astrologyProfile, se
       </div>
 
       {/* CTA button */}
-      {premium && (
+      {(
         <button
           onClick={runPrediction}
           disabled={loading}
@@ -272,7 +163,7 @@ export default function Predictor({ draws, dreamSelections, astrologyProfile, se
       )}
 
       {/* Draw date info */}
-      {premium && result && (
+      {result && (
         <div className="glass" style={{ borderRadius: 16, padding: '12px 16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b', marginBottom: 6 }}>
             <span>ปัจจัยที่ใช้</span>
@@ -421,7 +312,7 @@ export default function Predictor({ draws, dreamSelections, astrologyProfile, se
         * เพื่อความบันเทิงเท่านั้น ไม่รับรองผลการออกรางวัล
       </div>
     </div>
-  ) : premium ? (
+  ) : (
     /* Empty state */
     <div style={{ textAlign: 'center', padding: '60px 24px', color: '#374151' }}>
       <div style={{ fontSize: 64, marginBottom: 16 }} className="anim-float">🔮</div>
@@ -431,11 +322,11 @@ export default function Predictor({ draws, dreamSelections, astrologyProfile, se
         ยิ่งเพิ่มความฝันและข้อมูลดวงชะตา ยิ่งแม่น
       </div>
     </div>
-  ) : null
+  )
 
   // ── Render ────────────────────────────────────────────────────
   return (
-    <div className={`predictor-wrap${result && premium ? ' has-result' : ''}`}>
+    <div className={`predictor-wrap${result ? ' has-result' : ''}`}>
       {/* Left / single column */}
       <div>
         {leftPanel}
@@ -446,14 +337,7 @@ export default function Predictor({ draws, dreamSelections, astrologyProfile, se
       {/* Right column (desktop with results) */}
       {isWide && (
         <div>
-          {premium ? rightPanel : null}
-        </div>
-      )}
-
-      {/* Paywall — shown when not premium, full width */}
-      {!premium && (
-        <div style={isWide ? { gridColumn: '1 / -1' } : {}}>
-          <PremiumRequired session={session} onLogin={onShowAuth} onUpgrade={onShowSubscription} />
+          {rightPanel}
         </div>
       )}
     </div>

@@ -12,9 +12,51 @@ import AdminPanel from './components/AdminPanel'
 import { lotteryHistory } from './data/lotteryHistory'
 import { TabType, DreamSelection, AstrologyProfile, LotteryDraw, UserSession } from './types'
 type ExtendedTabType = TabType | 'admin'
-import { getSession, getSessionAsync, buildUserSession, isPremium } from './utils/auth'
+import { getSession, getSessionAsync, buildUserSession } from './utils/auth'
 import { supabase, supabaseReady } from './lib/supabase'
 import { getDraws, getDreams, getAstrology, saveDraws, saveDreams, saveAstrology } from './lib/db'
+
+// ── Save Data Nudge banner ──────────────────────────────────────
+function SaveDataNudge({ onSignup, onDismiss }: { onSignup: () => void; onDismiss: () => void }) {
+  return (
+    <div className="spring-in" style={{
+      position: 'fixed', bottom: 76, left: 0, right: 0, zIndex: 40,
+      display: 'flex', justifyContent: 'center', padding: '0 12px',
+      pointerEvents: 'none',
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        background: 'rgba(15,10,30,0.92)', backdropFilter: 'blur(16px)',
+        border: '1px solid rgba(124,58,237,0.35)',
+        borderRadius: 16, padding: '10px 14px',
+        maxWidth: 480, width: '100%',
+        pointerEvents: 'auto',
+        boxShadow: '0 4px 32px rgba(124,58,237,0.2)',
+      }}>
+        <span style={{ fontSize: 20, flexShrink: 0 }}>💾</span>
+        <span style={{ fontSize: 12, color: '#94a3b8', flex: 1, lineHeight: 1.4 }}>
+          ข้อมูลความฝัน + ดวงเก็บอยู่ใน browser นี้เท่านั้น
+          <span style={{ color: '#c4b5fd' }}> สมัครฟรี</span>เพื่อไม่ให้หาย
+        </span>
+        <button
+          onClick={onSignup}
+          style={{
+            background: 'rgba(124,58,237,0.25)', border: '1px solid rgba(124,58,237,0.5)',
+            borderRadius: 10, padding: '6px 12px', fontSize: 11, color: '#c4b5fd',
+            cursor: 'pointer', fontFamily: 'Sarabun, sans-serif', flexShrink: 0, fontWeight: 600,
+          }}
+        >สมัครฟรี</button>
+        <button
+          onClick={onDismiss}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: '#374151', fontSize: 16, lineHeight: 1, flexShrink: 0, padding: 4,
+          }}
+        >×</button>
+      </div>
+    </div>
+  )
+}
 
 export default function App() {
   const [activeTab, setActiveTab]   = useState<ExtendedTabType>('dashboard')
@@ -22,6 +64,16 @@ export default function App() {
   const [showAuth, setShowAuth]     = useState(false)
   const [showSub, setShowSub]       = useState(false)
   const [authMode, setAuthMode]     = useState<'login' | 'register'>('login')
+  const [showNudge, setShowNudge]   = useState(false)
+
+  // Show nudge after 5s for anonymous users (once per session)
+  useEffect(() => {
+    if (session) return
+    const dismissed = sessionStorage.getItem('nudge_dismissed')
+    if (dismissed) return
+    const t = setTimeout(() => setShowNudge(true), 5000)
+    return () => clearTimeout(t)
+  }, [session])
 
   const [draws, setDraws] = useState<LotteryDraw[]>(lotteryHistory)
   const [dreamSelections, setDreamSelections] = useState<DreamSelection[]>([])
@@ -65,7 +117,6 @@ export default function App() {
   useEffect(() => { saveAstrology(astrologyProfile, session?.userId) }, [astrologyProfile, session?.userId])
 
   const navigate = (tab: string) => setActiveTab(tab as TabType)
-  const premium = isPremium(session)
 
   function handleAuthSuccess(s: UserSession) {
     setSession(s)
@@ -100,24 +151,21 @@ export default function App() {
             draws={draws}
             dreamSelections={dreamSelections}
             astrologyProfile={astrologyProfile}
-            session={session}
             onNavigateDream={() => setActiveTab('dream')}
             onNavigateAstrology={() => setActiveTab('astrology')}
-            onShowAuth={() => openAuth('login')}
-            onShowSubscription={() => setShowSub(true)}
           />
         )}
         {activeTab === 'dream' && (
           <DreamInterpreter
             selected={dreamSelections}
             onSelectionChange={setDreamSelections}
-            isPremium={premium}
-            onShowAuth={() => openAuth('login')}
+            isPremium={true}
+            onShowAuth={() => openAuth('register')}
             onShowSubscription={() => setShowSub(true)}
           />
         )}
         {activeTab === 'statistics' && (
-          <Statistics draws={draws} isPremium={premium} onShowSubscription={() => setShowSub(true)} />
+          <Statistics draws={draws} isPremium={true} onShowSubscription={() => setShowSub(true)} />
         )}
         {activeTab === 'astrology' && (
           <AstrologyPanel profile={astrologyProfile} onProfileChange={setAstrologyProfile} />
@@ -129,6 +177,14 @@ export default function App() {
           <AdminPanel session={session} />
         )}
       </Layout>
+
+      {/* Save data nudge — anonymous users only */}
+      {!session && showNudge && (
+        <SaveDataNudge
+          onSignup={() => { setShowNudge(false); openAuth('register') }}
+          onDismiss={() => { setShowNudge(false); sessionStorage.setItem('nudge_dismissed', '1') }}
+        />
+      )}
 
       {showAuth && (
         <AuthModal

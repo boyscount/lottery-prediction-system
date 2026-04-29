@@ -116,7 +116,7 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
                     className="btn-ghost"
                     style={{ padding: '7px 14px', fontSize: 12, borderRadius: 10, display: 'flex', alignItems: 'center', gap: 5 }}
                   >
-                    <LogIn size={13} /> เข้าสู่ระบบ
+                    <LogIn size={13} /> บันทึกข้อมูล
                   </button>
                 )}
 
@@ -193,7 +193,7 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
                     fontFamily: 'Sarabun, sans-serif',
                   }}
                 >
-                  เข้าสู่ระบบ
+                  💾 บันทึก
                 </button>
               )}
             </div>

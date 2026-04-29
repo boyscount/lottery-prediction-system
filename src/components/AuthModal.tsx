@@ -73,9 +73,22 @@ export default function AuthModal({ onSuccess, onClose, defaultMode = 'login' }:
             <Logo size={52} className="anim-float" />
           </div>
           <div className="shimmer nf-bold" style={{ fontSize: 20, marginBottom: 4 }}>LottoMind</div>
-          <p style={{ fontSize: 13, color: '#64748b', marginBottom: 24 }}>
-            {mode === 'login' ? 'ยินดีต้อนรับกลับ' : 'สร้างบัญชีฟรี เริ่มต้นในไม่กี่วินาที'}
+          <p style={{ fontSize: 13, color: '#64748b', marginBottom: 8 }}>
+            {mode === 'login' ? 'ยินดีต้อนรับกลับ 👋' : 'สมัครฟรี ใช้ได้ทุก feature'}
           </p>
+          {mode === 'register' && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px',
+              borderRadius: 10, background: 'rgba(124,58,237,0.08)',
+              border: '1px solid rgba(124,58,237,0.2)', marginBottom: 16,
+            }}>
+              <span style={{ fontSize: 16 }}>💾</span>
+              <span style={{ fontSize: 12, color: '#a78bfa', lineHeight: 1.4 }}>
+                ข้อมูลความฝัน + ดวงของคุณจะถูกบันทึกถาวร<br/>และใช้ได้ทุกอุปกรณ์
+              </span>
+            </div>
+          )}
+          {mode === 'login' && <div style={{ marginBottom: 24 }} />}
 
           {/* Mode tabs */}
           <div style={{
