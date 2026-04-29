@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Home, Target, Moon, BarChart2, Star, BookOpen, LogOut, Heart, LogIn, Shield } from 'lucide-react'
+import { Home, Target, Moon, BarChart2, Star, BookOpen, LogOut, Heart, LogIn, Shield, BookMarked } from 'lucide-react'
 import { TabType, UserSession } from '../types'
 import { logoutUser } from '../utils/auth'
 import Logo from './Logo'
 import clsx from 'clsx'
 
-type ExtendedTabType = TabType | 'admin'
+type ExtendedTabType = TabType | 'journal' | 'admin'
 
 interface LayoutProps {
   activeTab: ExtendedTabType
@@ -24,6 +24,7 @@ const TABS: { id: ExtendedTabType; label: string; short: string; Icon: React.Ele
   { id: 'statistics', label: 'สถิติ',           short: 'สถิติ',   Icon: BarChart2 },
   { id: 'astrology',  label: 'โหราศาสตร์',     short: 'ดวง',     Icon: Star },
   { id: 'history',    label: 'ประวัติ',         short: 'ประวัติ', Icon: BookOpen },
+  { id: 'journal',    label: 'บันทึกเลข',      short: 'จด',      Icon: BookMarked },
   { id: 'admin',      label: 'Admin',            short: 'Admin',   Icon: Shield, adminOnly: true },
 ]
 

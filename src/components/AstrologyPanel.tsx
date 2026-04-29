@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { AstrologyProfile } from '../types'
 import { getAstrologyProfile, getCurrentLunarInfo } from '../utils/astrology'
+import { getNextDrawDate } from '../data/lotteryHistory'
 
 interface Props {
   profile: AstrologyProfile | null
@@ -17,10 +18,50 @@ const FORTUNE_MSG = (f: number) =>
   : f >= 50 ? { text: 'ดวงปานกลาง — ลองดูก็ได้', color: '#fbbf24', emoji: '🙂' }
   : { text: 'ดวงอ่อน — ทำบุญก่อนนะ', color: '#fca5a5', emoji: '🙏' }
 
+// Generate next 4 draw dates from a given date
+function getUpcomingDraws(fromDate: string, count: number): string[] {
+  const draws: string[] = []
+  const d = new Date(fromDate)
+  for (let i = 0; draws.length < count; i++) {
+    const day = d.getDate()
+    if (day === 1 || day === 16) draws.push(d.toISOString().slice(0, 10))
+    d.setDate(d.getDate() + 1)
+  }
+  return draws
+}
+
+function drawStrength(drawDate: string, profile: AstrologyProfile): number {
+  const d = new Date(drawDate)
+  const dow = d.getDay() // 0=Sun...6=Sat
+  const dayNames = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัส','ศุกร์','เสาร์']
+  const isLuckyDay = profile.luckyDays.includes(dayNames[dow])
+  const dayBonus = isLuckyDay ? 15 : 0
+  // Draw on 16th vs 1st oscillation adds flavor
+  const dayOfMonth = d.getDate()
+  const rhythmBonus = ((dayOfMonth === 16 ? 1 : 0) + (profile.personalNumber % 2)) * 8
+  return Math.min(99, Math.round(profile.currentMonthFortune * 0.7 + dayBonus + rhythmBonus + Math.random() * 0))
+}
+
+const STRENGTH_LABEL = (s: number) =>
+  s >= 80 ? { text: 'ดวงเยี่ยม', color: '#86efac', stars: 5 }
+  : s >= 65 ? { text: 'ดวงดี', color: '#67e8f9', stars: 4 }
+  : s >= 50 ? { text: 'ปานกลาง', color: '#fbbf24', stars: 3 }
+  : s >= 35 ? { text: 'อ่อนนิด', color: '#f97316', stars: 2 }
+  : { text: 'ดวงอ่อน', color: '#fca5a5', stars: 1 }
+
+const MONTH_TH_SHORT = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
+
 export default function AstrologyPanel({ profile, onProfileChange }: Props) {
   const [birthDate, setBirthDate] = useState(profile?.birthDate || '')
   const [error, setError] = useState('')
   const lunar = getCurrentLunarInfo()
+
+  const upcomingDrawStrengths = useMemo(() => {
+    if (!profile) return []
+    const next = getNextDrawDate()
+    const draws = getUpcomingDraws(next, 4)
+    return draws.map(d => ({ date: d, strength: drawStrength(d, profile) }))
+  }, [profile])
 
   function calculate() {
     if (!birthDate) { setError('กรุณาเลือกวันเกิด'); return }
@@ -153,6 +194,69 @@ export default function AstrologyPanel({ profile, onProfileChange }: Props) {
               {fortune.emoji} {fortune.text}
             </div>
           </div>
+
+          {/* ── Draw Strength Predictor ── */}
+          {upcomingDrawStrengths.length > 0 && (
+            <div className="glass" style={{ borderRadius: 20, padding: 18 }}>
+              <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: 4, fontSize: 14 }}>
+                📅 ดวงตามงวด — 4 งวดถัดไป
+              </div>
+              <div style={{ fontSize: 12, color: '#4b5563', marginBottom: 16 }}>
+                ความแรงของดวงโชคลาภตามวันออกรางวัล
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {upcomingDrawStrengths.map((ds, i) => {
+                  const d = new Date(ds.date)
+                  const label = `${d.getDate()} ${MONTH_TH_SHORT[d.getMonth()]} ${d.getFullYear() + 543}`
+                  const sl = STRENGTH_LABEL(ds.strength)
+                  return (
+                    <div key={ds.date} className={`spring-in${i === 0 ? ' gb-animated' : ''}`}
+                      style={{
+                        borderRadius: 14, padding: '12px 14px',
+                        background: i === 0 ? 'rgba(8,5,22,0.94)' : 'rgba(255,255,255,0.03)',
+                        border: i !== 0 ? '1px solid rgba(255,255,255,0.07)' : undefined,
+                        animationDelay: `${i * 90}ms`,
+                      }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {i === 0 && <span className="badge badge-green" style={{ fontSize: 9 }}>งวดหน้า</span>}
+                          <span style={{ fontWeight: 700, color: i === 0 ? '#e2e8f0' : '#94a3b8', fontSize: 13 }}>{label}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 11 }}>
+                            {'★'.repeat(sl.stars)}{'☆'.repeat(5 - sl.stars)}
+                          </span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: sl.color }}>{ds.strength}%</span>
+                        </div>
+                      </div>
+                      <div className="pbar-track" style={{ height: i === 0 ? 8 : 5, borderRadius: 8 }}>
+                        <div style={{
+                          height: '100%', borderRadius: 8,
+                          width: `${ds.strength}%`,
+                          background: `linear-gradient(90deg, ${sl.color}60, ${sl.color})`,
+                          boxShadow: i === 0 ? `0 0 10px ${sl.color}60` : 'none',
+                          transition: 'width 1.4s cubic-bezier(0.4,0,0.2,1)',
+                          position: 'relative', overflow: 'hidden',
+                        }}>
+                          {i === 0 && (
+                            <div style={{
+                              position: 'absolute', top: 0, bottom: 0, left: '-100%', width: '60%',
+                              background: 'linear-gradient(90deg,transparent,rgba(255,255,255,0.4),transparent)',
+                              animation: 'pbarSweep 2s ease-in-out infinite',
+                            }} />
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 11, color: sl.color, marginTop: 6 }}>
+                        {sl.text}
+                        {ds.strength >= 65 && i === 0 && ' — แนะนำซื้องวดนี้!'}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Lucky numbers */}
           <div className="glass" style={{ borderRadius: 20, padding: 18 }}>

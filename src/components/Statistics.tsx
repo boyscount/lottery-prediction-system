@@ -12,7 +12,7 @@ interface Props {
   isPremium: boolean
   onShowSubscription: () => void
 }
-type View = 'frequency' | 'position' | 'overdue' | 'sum'
+type View = 'frequency' | 'heatmap' | 'position' | 'overdue' | 'sum'
 
 const TREND_COLORS = { hot: '#ef4444', warm: '#f59e0b', cold: '#3b82f6', frozen: '#8b5cf6' }
 
@@ -45,8 +45,29 @@ export default function Statistics({ draws, isPremium, onShowSubscription }: Pro
     cursor: { fill: 'rgba(124,58,237,0.08)' },
   }
 
+  // Heatmap data: 00–99 mapped to frequency count
+  const heatmapData = useMemo(() => {
+    const countMap = new Map<string, number>()
+    const maxCount = { val: 1 }
+    allStats.forEach(s => {
+      countMap.set(s.number, s.count)
+      if (s.count > maxCount.val) maxCount.val = s.count
+    })
+    return { countMap, max: maxCount.val }
+  }, [allStats])
+
+  function heatColor(count: number, max: number): string {
+    if (count === 0) return 'rgba(255,255,255,0.03)'
+    const ratio = count / max
+    if (ratio >= 0.75) return `rgba(239,68,68,${0.35 + ratio * 0.55})`
+    if (ratio >= 0.5)  return `rgba(245,158,11,${0.25 + ratio * 0.5})`
+    if (ratio >= 0.25) return `rgba(124,58,237,${0.2 + ratio * 0.4})`
+    return `rgba(59,130,246,${0.1 + ratio * 0.5})`
+  }
+
   const VIEWS: { id: View; label: string; emoji: string; premium?: boolean }[] = [
     { id: 'frequency', label: 'ความถี่ 2 ตัว', emoji: '📈' },
+    { id: 'heatmap',   label: 'Heatmap',        emoji: '🌡️' },
     { id: 'position',  label: 'ตำแหน่งหลัก',  emoji: '🔢', premium: true },
     { id: 'overdue',   label: 'เลขค้าง',       emoji: '⏰', premium: true },
     { id: 'sum',       label: 'ผลรวม',          emoji: '➕', premium: true },
@@ -144,6 +165,65 @@ export default function Statistics({ draws, isPremium, onShowSubscription }: Pro
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Heatmap ── */}
+      {view === 'heatmap' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="glass" style={{ borderRadius: 20, padding: 20 }}>
+            <div style={{ fontWeight: 600, color: '#e2e8f0', fontSize: 14, marginBottom: 4 }}>🌡️ Heatmap เลขท้าย 2 ตัว (00–99)</div>
+            <div style={{ fontSize: 12, color: '#4b5563', marginBottom: 16 }}>
+              สีแดง = ออกบ่อย · สีม่วง = ปานกลาง · สีน้ำเงิน = ออกน้อย · เทา = ยังไม่เคยออก
+            </div>
+            <div className="heatmap-grid">
+              {Array.from({ length: 100 }, (_, i) => {
+                const num = i.toString().padStart(2, '0')
+                const cnt = heatmapData.countMap.get(num) || 0
+                const bg  = heatColor(cnt, heatmapData.max)
+                const textColor = cnt / heatmapData.max >= 0.5 ? '#fff' : cnt > 0 ? '#e2e8f0' : '#374151'
+                return (
+                  <div key={num} className="heatmap-cell" style={{ background: bg }}>
+                    <span className="heatmap-num" style={{ color: textColor }}>{num}</span>
+                    {cnt > 0 && <span className="heatmap-cnt" style={{ color: textColor }}>{cnt}</span>}
+                  </div>
+                )
+              })}
+            </div>
+            {/* Legend */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, color: '#4b5563' }}>ความถี่:</span>
+              {[
+                { label: 'สูงมาก',   color: 'rgba(239,68,68,0.8)' },
+                { label: 'สูง',      color: 'rgba(245,158,11,0.7)' },
+                { label: 'ปานกลาง', color: 'rgba(124,58,237,0.6)' },
+                { label: 'ต่ำ',      color: 'rgba(59,130,246,0.4)' },
+                { label: 'ยังไม่ออก', color: 'rgba(255,255,255,0.04)' },
+              ].map(l => (
+                <span key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#64748b' }}>
+                  <span style={{ width: 12, height: 12, borderRadius: 3, background: l.color, border: '1px solid rgba(255,255,255,0.1)', display: 'inline-block' }} />
+                  {l.label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Top 5 hottest */}
+          <div className="glass" style={{ borderRadius: 18, padding: 16 }}>
+            <div style={{ fontWeight: 600, color: '#e2e8f0', fontSize: 13, marginBottom: 12 }}>🔥 Top 5 เลขร้อนสุด</div>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              {allStats.sort((a,b) => b.count - a.count).slice(0,5).map((s, i) => (
+                <div key={s.number} style={{ textAlign: 'center' }}>
+                  <div className={`ball b-md nf-bold ball-i ${i===0?'b-red':i<=1?'b-amber':'b-purple'}`}
+                    style={{ margin: '0 auto 6px', animationDelay: `${i*80}ms` }}
+                    >
+                    {s.number}
+                  </div>
+                  <div style={{ fontSize: 10, color: '#64748b' }}>{s.count} ครั้ง</div>
+                </div>
+              ))}
             </div>
           </div>
         </div>

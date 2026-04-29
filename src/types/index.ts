@@ -85,6 +85,17 @@ export interface AstrologyProfile {
   personalNumber: number
 }
 
+// ── Number Journal ──────────────────────────────────────────────
+export interface JournalEntry {
+  id: string
+  drawDate: string           // YYYY-MM-DD
+  numbers: { type: '2digit' | '3digit' | '6digit'; value: string }[]
+  note?: string
+  checkedResult?: boolean    // user marked as "checked against result"
+  hitPrize?: string          // e.g. "รางวัลที่ 1", "ท้าย 2 ตัว"
+  createdAt: string
+}
+
 export interface DrawFormData {
   date: string
   firstPrize: string

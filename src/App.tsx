@@ -9,12 +9,13 @@ import HistoryManager from './components/HistoryManager'
 import AuthModal from './components/AuthModal'
 import SubscriptionModal from './components/SubscriptionModal'
 import AdminPanel from './components/AdminPanel'
+import NumberJournal from './components/NumberJournal'
 import { lotteryHistory } from './data/lotteryHistory'
-import { TabType, DreamSelection, AstrologyProfile, LotteryDraw, UserSession } from './types'
-type ExtendedTabType = TabType | 'admin'
+import { TabType, DreamSelection, AstrologyProfile, LotteryDraw, UserSession, JournalEntry } from './types'
+type ExtendedTabType = TabType | 'journal' | 'admin'
 import { getSession, getSessionAsync, buildUserSession } from './utils/auth'
 import { supabase, supabaseReady } from './lib/supabase'
-import { getDraws, getDreams, getAstrology, saveDraws, saveDreams, saveAstrology } from './lib/db'
+import { getDraws, getDreams, getAstrology, saveDraws, saveDreams, saveAstrology, getJournal, saveJournal } from './lib/db'
 
 // ── Save Data Nudge banner ──────────────────────────────────────
 function SaveDataNudge({ onSignup, onDismiss }: { onSignup: () => void; onDismiss: () => void }) {
@@ -78,18 +79,21 @@ export default function App() {
   const [draws, setDraws] = useState<LotteryDraw[]>(lotteryHistory)
   const [dreamSelections, setDreamSelections] = useState<DreamSelection[]>([])
   const [astrologyProfile, setAstrologyProfile] = useState<AstrologyProfile | null>(null)
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([])
 
   // Load initial data
   useEffect(() => {
     getDraws().then(setDraws)
     getDreams(session?.userId).then(setDreamSelections)
     getAstrology(session?.userId).then(setAstrologyProfile)
+    getJournal(session?.userId).then(setJournalEntries)
   }, [])
 
   // Reload per-user data on session change
   useEffect(() => {
     getDreams(session?.userId).then(setDreamSelections)
     getAstrology(session?.userId).then(setAstrologyProfile)
+    getJournal(session?.userId).then(setJournalEntries)
   }, [session?.userId])
 
   // Supabase auth state listener
@@ -115,6 +119,7 @@ export default function App() {
   // Persist per-user data
   useEffect(() => { saveDreams(dreamSelections, session?.userId) }, [dreamSelections, session?.userId])
   useEffect(() => { saveAstrology(astrologyProfile, session?.userId) }, [astrologyProfile, session?.userId])
+  useEffect(() => { saveJournal(journalEntries, session?.userId) }, [journalEntries, session?.userId])
 
   const navigate = (tab: string) => setActiveTab(tab as TabType)
 
@@ -172,6 +177,9 @@ export default function App() {
         )}
         {activeTab === 'history' && (
           <HistoryManager draws={draws} onDrawsChange={setDraws} />
+        )}
+        {activeTab === 'journal' && (
+          <NumberJournal entries={journalEntries} draws={draws} onEntriesChange={setJournalEntries} />
         )}
         {activeTab === 'admin' && session?.isAdmin && (
           <AdminPanel session={session} />

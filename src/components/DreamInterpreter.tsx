@@ -41,6 +41,7 @@ export default function DreamInterpreter({ selected, onSelectionChange, isPremiu
     }
   }
 
+  // Basic results (max confidence per number)
   const result2 = useMemo(() => {
     const map = new Map<number, number>()
     for (const s of selected)
@@ -57,6 +58,32 @@ export default function DreamInterpreter({ selected, onSelectionChange, isPremiu
         map.set(n, Math.max(map.get(n) || 0, s.confidence))
     return Array.from(map.entries()).sort((a,b) => b[1]-a[1]).slice(0, 6)
       .map(([n, c]) => ({ n: n.toString().padStart(3,'0'), c }))
+  }, [selected])
+
+  // Combo analyzer: numbers that appear in 2+ dreams (overlap = extra confidence)
+  const comboNumbers = useMemo(() => {
+    if (selected.length < 2) return []
+    const countMap = new Map<number, { count: number; totalConf: number; dreamNames: string[] }>()
+    for (const s of selected) {
+      for (const n of s.twoDigit) {
+        const prev = countMap.get(n) || { count: 0, totalConf: 0, dreamNames: [] }
+        countMap.set(n, {
+          count: prev.count + 1,
+          totalConf: prev.totalConf + s.confidence,
+          dreamNames: [...prev.dreamNames, s.thaiName],
+        })
+      }
+    }
+    return Array.from(countMap.entries())
+      .filter(([, v]) => v.count >= 2)
+      .sort((a, b) => b[1].count - a[1].count || b[1].totalConf - a[1].totalConf)
+      .slice(0, 6)
+      .map(([n, v]) => ({
+        n: n.toString().padStart(2, '0'),
+        count: v.count,
+        avgConf: Math.round(v.totalConf / v.count),
+        dreamNames: v.dreamNames,
+      }))
   }, [selected])
 
   const confBar = (c: number) => c >= 75 ? 'pbar-green' : c >= 60 ? 'pbar-cyan' : 'pbar-amber'
@@ -132,6 +159,50 @@ export default function DreamInterpreter({ selected, onSelectionChange, isPremiu
               </button>
             ))}
           </div>
+
+          {/* ── Dream Combo Analyzer ── */}
+          {comboNumbers.length > 0 && (
+            <div style={{
+              marginBottom: 16, padding: 14, borderRadius: 14,
+              background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)',
+            }} className="spring-in">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                <span style={{ fontSize: 16 }}>⚡</span>
+                <span style={{ fontWeight: 700, color: '#fbbf24', fontSize: 13 }}>
+                  Combo! เลขซ้ำหลายฝัน
+                </span>
+                <span className="badge badge-amber" style={{ marginLeft: 'auto', fontSize: 10 }}>
+                  พลังสูง
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: '#78716c', marginBottom: 12, lineHeight: 1.5 }}>
+                เลขเหล่านี้ปรากฏใน <strong style={{ color: '#fbbf24' }}>หลายความฝัน</strong> พร้อมกัน — โอกาสสูงกว่าปกติ
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                {comboNumbers.map((c, i) => (
+                  <div key={c.n} className="spring-in" style={{ animationDelay: `${i * 80}ms`, textAlign: 'center' }}>
+                    <div style={{ position: 'relative', display: 'inline-block' }}>
+                      <div className="ball b-md b-amber nf-bold ball-i" style={{ margin: '0 auto' }}>
+                        {c.n}
+                      </div>
+                      <div style={{
+                        position: 'absolute', top: -8, right: -8,
+                        background: '#ef4444', color: '#fff', borderRadius: 999,
+                        fontSize: 9, fontWeight: 800, padding: '2px 5px', whiteSpace: 'nowrap',
+                        border: '1px solid rgba(0,0,0,0.3)',
+                      }}>
+                        ×{c.count}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 9, color: '#92400e', marginTop: 6, lineHeight: 1.4, maxWidth: 60 }}>
+                      {c.dreamNames.join(', ')}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#d97706', fontWeight: 700 }}>{c.avgConf}%</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Results — premium locked */}
           {isPremium ? (

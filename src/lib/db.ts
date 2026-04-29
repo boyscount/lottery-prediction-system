@@ -1,5 +1,5 @@
 import { supabase, supabaseReady } from './supabase'
-import { LotteryDraw, DreamSelection, AstrologyProfile } from '../types'
+import { LotteryDraw, DreamSelection, AstrologyProfile, JournalEntry } from '../types'
 import { lotteryHistory } from '../data/lotteryHistory'
 
 // ── Lottery Draws ───────────────────────────────────────────────
@@ -117,6 +117,18 @@ export async function saveAstrology(profile: AstrologyProfile | null, userId?: s
     profile_data: profile,
     updated_at: new Date().toISOString(),
   })
+}
+
+// ── Number Journal (per-user, localStorage only for now) ────────
+export async function getJournal(userId?: string): Promise<JournalEntry[]> {
+  const key = userId ? `lottomind_journal_${userId}` : 'lottomind_journal_anon'
+  const raw = localStorage.getItem(key)
+  return raw ? JSON.parse(raw) : []
+}
+
+export async function saveJournal(entries: JournalEntry[], userId?: string): Promise<void> {
+  const key = userId ? `lottomind_journal_${userId}` : 'lottomind_journal_anon'
+  localStorage.setItem(key, JSON.stringify(entries))
 }
 
 // ── Subscription status ─────────────────────────────────────────

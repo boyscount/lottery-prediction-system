@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts'
 import { LotteryDraw, DreamSelection, AstrologyProfile, PredictionResult } from '../types'
 import { generatePrediction } from '../utils/prediction'
@@ -14,6 +14,75 @@ interface Props {
 }
 
 type PredictType = '2digit' | '3digit' | '6digit'
+
+// ── Slot Machine loading display ───────────────────────────────
+const DIGITS = ['0','1','2','3','4','5','6','7','8','9']
+function SlotMachineLoader({ cols = 2 }: { cols?: number }) {
+  const [frame, setFrame] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setFrame(f => f + 1), 60)
+    return () => clearInterval(id)
+  }, [])
+  return (
+    <div style={{ textAlign: 'center', padding: '32px 0' }}>
+      <div style={{ fontSize: 13, color: '#64748b', marginBottom: 20 }}>
+        🔮 กำลังวิเคราะห์ข้อมูล...
+      </div>
+      <div className="slot-machine-wrap">
+        {Array.from({ length: cols }).map((_, ci) => (
+          <div key={ci} className="slot-col">
+            <div className="slot-strip" style={{ transform: `translateY(-${(frame * 7 + ci * 30) % 640}px)`, transition: 'none' }}>
+              {[...DIGITS, ...DIGITS, ...DIGITS, ...DIGITS, ...DIGITS, ...DIGITS, ...DIGITS, ...DIGITS, ...DIGITS, ...DIGITS].map((d, i) => (
+                <div key={i} className="slot-digit-char">{d}</div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 18, display: 'flex', gap: 8, justifyContent: 'center' }}>
+        {[0,1,2].map(i => (
+          <div key={i} style={{
+            width: 7, height: 7, borderRadius: '50%',
+            background: '#7c3aed', opacity: 0.3,
+            animation: `pulse-soft 1.2s ease-in-out ${i * 0.3}s infinite`,
+          }} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Particle burst on reveal ───────────────────────────────────
+function ParticleBurst() {
+  const colors = ['#e879f9','#a855f7','#06b6d4','#f59e0b','#22c55e','#ef4444','#67e8f9']
+  const particles = useMemo(() =>
+    Array.from({ length: 20 }, (_, i) => {
+      const angle = (i / 20) * 360 + Math.random() * 18
+      const dist  = 60 + Math.random() * 80
+      const rad   = (angle * Math.PI) / 180
+      return {
+        px: `${Math.cos(rad) * dist}px`,
+        py: `${Math.sin(rad) * dist}px`,
+        color: colors[i % colors.length],
+        delay: `${Math.random() * 200}ms`,
+        size: 4 + Math.random() * 6,
+      }
+    }), [])
+
+  return (
+    <div style={{ position: 'absolute', top: '50%', left: '50%', pointerEvents: 'none', zIndex: 20 }}>
+      {particles.map((p, i) => (
+        <div key={i} className="particle-dot"
+          style={{
+            background: p.color,
+            width: p.size, height: p.size,
+            '--px': p.px, '--py': p.py, '--pd': p.delay,
+          } as React.CSSProperties}
+        />
+      ))}
+    </div>
+  )
+}
 
 // ── Input status card ──────────────────────────────────────────
 function InputCard({ icon, label, status, active, onClick }: {
@@ -79,10 +148,11 @@ function FactorBar({ label, value, color }: { label: string; value: number; colo
 
 // ── Main component ─────────────────────────────────────────────
 export default function Predictor({ draws, dreamSelections, astrologyProfile, onNavigateDream, onNavigateAstrology }: Props) {
-  const [result, setResult]       = useState<PredictionResult | null>(null)
-  const [loading, setLoading]     = useState(false)
+  const [result, setResult]         = useState<PredictionResult | null>(null)
+  const [loading, setLoading]       = useState(false)
   const [activeType, setActiveType] = useState<PredictType>('2digit')
-  const [visible, setVisible]     = useState(false)
+  const [visible, setVisible]       = useState(false)
+  const [showParticles, setShowParticles] = useState(false)
   const nextDraw = getNextDrawDate()
 
   // Track viewport for responsive layout
@@ -96,12 +166,15 @@ export default function Predictor({ draws, dreamSelections, astrologyProfile, on
   function runPrediction() {
     setLoading(true)
     setVisible(false)
+    setShowParticles(false)
     setTimeout(() => {
       const r = generatePrediction(draws, dreamSelections, astrologyProfile, nextDraw)
       setResult(r)
       setLoading(false)
+      setShowParticles(true)
       setTimeout(() => setVisible(true), 80)
-    }, 1600)
+      setTimeout(() => setShowParticles(false), 900)
+    }, 1800)
   }
 
   const numbers = useMemo(() => {
@@ -141,7 +214,8 @@ export default function Predictor({ draws, dreamSelections, astrologyProfile, on
       </div>
 
       {/* CTA button */}
-      {(
+      <div style={{ position: 'relative' }}>
+        {showParticles && <ParticleBurst />}
         <button
           onClick={runPrediction}
           disabled={loading}
@@ -149,18 +223,14 @@ export default function Predictor({ draws, dreamSelections, astrologyProfile, on
           style={{ borderRadius: 18, padding: '17px 24px', fontSize: 16, width: '100%' }}
         >
           {loading ? (
-            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-              <svg style={{ width: 20, height: 20 }} className="anim-spin-slow" fill="none" viewBox="0 0 24 24">
-                <circle style={{ opacity: 0.25 }} cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                <path style={{ opacity: 0.8 }} fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-              </svg>
-              กำลังวิเคราะห์...
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, opacity: 0.9 }}>
+              ✨ กำลังประมวลผล...
             </span>
           ) : (
             <>🔮 คำนวณทำนาย<br/><span style={{ fontSize: 12, opacity: 0.75 }}>งวด {nextDraw}</span></>
           )}
         </button>
-      )}
+      </div>
 
       {/* Draw date info */}
       {result && (
@@ -311,6 +381,11 @@ export default function Predictor({ draws, dreamSelections, astrologyProfile, on
       <div style={{ textAlign: 'center', fontSize: 11, color: '#374151', marginTop: 14, padding: 8 }}>
         * เพื่อความบันเทิงเท่านั้น ไม่รับรองผลการออกรางวัล
       </div>
+    </div>
+  ) : loading ? (
+    /* Slot machine loading */
+    <div className="glass" style={{ borderRadius: 22, overflow: 'hidden' }}>
+      <SlotMachineLoader cols={activeType === '6digit' ? 6 : activeType === '3digit' ? 3 : 2} />
     </div>
   ) : (
     /* Empty state */
