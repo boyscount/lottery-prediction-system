@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { UserSession } from '../types'
 import Logo from './Logo'
 
@@ -8,18 +9,8 @@ interface Props {
   onClose: () => void
 }
 
-const AMOUNTS = [20, 50, 100, 200]
-
 export default function DonateModal({ onClose }: Props) {
-  const [copied, setCopied] = useState(false)
   const [thanked, setThanked] = useState(false)
-
-  function copyRef() {
-    navigator.clipboard.writeText('004999084321198').then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
-  }
 
   function handleDone() {
     setThanked(true)
@@ -83,50 +74,6 @@ export default function DonateModal({ onClose }: Props) {
               </div>
               <div style={{ fontSize: 11, color: '#6b7280' }}>PromptPay · รับได้ทุกธนาคาร</div>
             </div>
-
-            {/* Suggested amounts */}
-            <div style={{ marginBottom: 18 }}>
-              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10, textAlign: 'center' }}>
-                จำนวนที่แนะนำ (สแกน QR แล้วใส่จำนวนเองได้)
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-                {AMOUNTS.map(a => (
-                  <div key={a} style={{
-                    padding: '10px 4px', borderRadius: 12, textAlign: 'center',
-                    background: 'rgba(124,58,237,0.08)',
-                    border: '1px solid rgba(124,58,237,0.2)',
-                  }}>
-                    <div style={{ fontFamily: 'Space Grotesk', fontWeight: 700, fontSize: 16, color: '#c4b5fd' }}>
-                      {a}
-                    </div>
-                    <div style={{ fontSize: 10, color: '#64748b' }}>บาท</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Reference copy */}
-            <button
-              onClick={copyRef}
-              style={{
-                width: '100%', padding: '11px 16px', borderRadius: 14, marginBottom: 14,
-                background: copied ? 'rgba(34,197,94,0.1)' : 'rgba(255,255,255,0.04)',
-                border: `1px solid ${copied ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.1)'}`,
-                cursor: 'pointer', fontFamily: 'Sarabun, sans-serif',
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                transition: 'all 0.2s',
-              }}
-            >
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontSize: 10, color: '#64748b', marginBottom: 2 }}>เลขที่อ้างอิง</div>
-                <div style={{ fontFamily: 'Space Grotesk', fontSize: 13, color: '#e2e8f0', letterSpacing: '0.05em' }}>
-                  004999084321198
-                </div>
-              </div>
-              <span style={{ fontSize: 12, color: copied ? '#4ade80' : '#64748b' }}>
-                {copied ? '✅ คัดลอกแล้ว' : '📋 คัดลอก'}
-              </span>
-            </button>
 
             {/* Done button */}
             <button
