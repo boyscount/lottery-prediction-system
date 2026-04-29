@@ -13,10 +13,176 @@ interface Props {
 
 const CATS = Object.keys(categoryLabels) as DreamCategory[]
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+
+// ─── AI Dream Interpreter Panel ──────────────────────────────────────────────
+interface AiDreamResult {
+  keywords: string[]
+  interpretation: string
+  twoDigits: number[]
+  threeDigits: number[]
+  confidence: number
+  luckyElements: string[]
+  isFallback?: boolean
+}
+
+function AiDreamPanel() {
+  const [text, setText]       = useState('')
+  const [loading, setLoading] = useState(false)
+  const [result, setResult]   = useState<AiDreamResult | null>(null)
+  const [error, setError]     = useState('')
+
+  async function handleAnalyze() {
+    if (!text.trim() || text.length < 5) {
+      setError('กรุณาอธิบายความฝันอย่างน้อย 5 ตัวอักษร')
+      return
+    }
+    setError('')
+    setLoading(true)
+    setResult(null)
+    try {
+      const res = await fetch(`${API_URL}/api/ai/dream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dreamText: text }),
+      })
+      if (!res.ok) throw new Error(`Server error ${res.status}`)
+      const data = await res.json()
+      setResult(data)
+    } catch (e: any) {
+      setError('ไม่สามารถเชื่อมต่อ AI ได้ กรุณาตรวจสอบ server หรือลองใหม่')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Input */}
+      <div className="glass" style={{ borderRadius: 18, padding: 18, border: '1px solid rgba(139,92,246,0.3)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: 22 }}>🤖</span>
+          <div>
+            <div style={{ fontWeight: 700, color: '#c4b5fd', fontSize: 14 }}>AI ตีความฝัน</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>พิมพ์สิ่งที่ฝัน AI จะวิเคราะห์เลขมงคลให้</div>
+          </div>
+        </div>
+        <textarea
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder="เช่น ฝันเห็นงูใหญ่สีทองกำลังว่ายน้ำในทะเล มีปลาวาฬโผล่มาด้วย..."
+          rows={4}
+          style={{
+            width: '100%', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 12, padding: '10px 14px', fontSize: 14, color: '#e2e8f0',
+            fontFamily: 'Sarabun, sans-serif', resize: 'vertical', outline: 'none',
+            boxSizing: 'border-box', lineHeight: 1.6,
+          }}
+        />
+        {error && <div style={{ fontSize: 12, color: '#f87171', marginTop: 6 }}>⚠️ {error}</div>}
+        <button
+          onClick={handleAnalyze}
+          disabled={loading || text.trim().length < 5}
+          className="btn-primary press"
+          style={{ marginTop: 12, width: '100%', borderRadius: 12, padding: '11px 0', fontSize: 14, opacity: (loading || text.trim().length < 5) ? 0.5 : 1 }}
+        >
+          {loading ? '🔮 AI กำลังวิเคราะห์...' : '✨ วิเคราะห์ฝันด้วย AI'}
+        </button>
+      </div>
+
+      {/* Loading */}
+      {loading && (
+        <div className="glass spring-in" style={{ borderRadius: 18, padding: 24, textAlign: 'center' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🔮</div>
+          <div style={{ fontSize: 14, color: '#c4b5fd', fontWeight: 600 }}>AI กำลังตีความความฝันของคุณ...</div>
+          <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>ใช้เวลาไม่กี่วินาที</div>
+        </div>
+      )}
+
+      {/* Result */}
+      {result && (
+        <div className="gb-animated glass spring-in" style={{ borderRadius: 20, padding: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+            <span style={{ fontSize: 20 }}>✨</span>
+            <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 15 }}>ผลการวิเคราะห์</div>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ fontSize: 10, color: '#64748b' }}>ความมั่นใจ</div>
+              <span className="badge badge-purple" style={{ fontSize: 11 }}>{result.confidence}%</span>
+            </div>
+          </div>
+
+          {/* Keywords */}
+          {result.keywords.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6 }}>🔍 สิ่งที่พบในความฝัน</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {result.keywords.map((k, i) => (
+                  <span key={i} style={{
+                    background: 'rgba(124,58,237,0.2)', border: '1px solid rgba(124,58,237,0.4)',
+                    color: '#c4b5fd', fontSize: 12, padding: '3px 10px', borderRadius: 999,
+                  }}>{k}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Interpretation */}
+          <div style={{ marginBottom: 14, padding: 12, background: 'rgba(255,255,255,0.03)', borderRadius: 12, borderLeft: '3px solid rgba(124,58,237,0.6)' }}>
+            <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>{result.interpretation}</div>
+          </div>
+
+          {/* Numbers */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+            <div>
+              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>🎰 เลข 2 ตัวมงคล</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {result.twoDigits.map((n, i) => (
+                  <div key={i} className="ball b-sm b-purple nf-bold num-reveal spring-in"
+                    style={{ animationDelay: `${i * 60}ms` }}>
+                    {String(n).padStart(2, '0')}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>🎲 เลข 3 ตัวมงคล</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {result.threeDigits.map((n, i) => (
+                  <div key={i} className="pill-cyan nf-bold num-reveal spring-in"
+                    style={{ fontSize: 13, padding: '0 10px', height: 34, animationDelay: `${i * 60}ms` }}>
+                    {String(n).padStart(3, '0')}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Lucky Elements */}
+          {result.luckyElements && result.luckyElements.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <span style={{ fontSize: 11, color: '#64748b', alignSelf: 'center' }}>✨ มงคล:</span>
+              {result.luckyElements.map((e, i) => (
+                <span key={i} className="badge badge-amber" style={{ fontSize: 11 }}>{e}</span>
+              ))}
+            </div>
+          )}
+
+          {result.isFallback && (
+            <div style={{ fontSize: 10, color: '#374151', marginTop: 10 }}>
+              ⚠️ ใช้โหมด Offline (ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY)
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function DreamInterpreter({ selected, onSelectionChange, isPremium, onShowAuth, onShowSubscription }: Props) {
   const [search, setSearch]       = useState('')
   const [cat, setCat]             = useState<DreamCategory | 'all'>('all')
   const [expanded, setExpanded]   = useState<string | null>(null)
+  const [activeMode, setActiveMode] = useState<'browse' | 'ai'>('browse')
   const scrollRef                 = useRef<HTMLDivElement>(null)
 
   const filtered = useMemo(() => dreamDatabase.filter(d => {
@@ -92,8 +258,42 @@ export default function DreamInterpreter({ selected, onSelectionChange, isPremiu
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       <div>
         <h2 style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 4 }}>💭 ฝันแล้วได้เลข</h2>
-        <p style={{ fontSize: 13, color: '#64748b' }}>เลือกสิ่งที่คุณฝันเห็น → ระบบคำนวณเลขมงคลให้อัตโนมัติ</p>
+        <p style={{ fontSize: 13, color: '#64748b' }}>เลือกสิ่งที่คุณฝันเห็น หรือให้ AI ตีความความฝันของคุณ</p>
       </div>
+
+      {/* Mode toggle */}
+      <div style={{ display: 'flex', gap: 0, background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: 4 }}>
+        <button
+          onClick={() => setActiveMode('browse')}
+          style={{
+            flex: 1, padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600,
+            border: 'none', cursor: 'pointer', fontFamily: 'Sarabun, sans-serif',
+            background: activeMode === 'browse' ? 'rgba(124,58,237,0.35)' : 'transparent',
+            color: activeMode === 'browse' ? '#c4b5fd' : '#64748b',
+            transition: 'all 0.2s',
+          }}
+        >
+          📚 เลือกจากฐานข้อมูล
+        </button>
+        <button
+          onClick={() => setActiveMode('ai')}
+          style={{
+            flex: 1, padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600,
+            border: 'none', cursor: 'pointer', fontFamily: 'Sarabun, sans-serif',
+            background: activeMode === 'ai' ? 'rgba(124,58,237,0.35)' : 'transparent',
+            color: activeMode === 'ai' ? '#c4b5fd' : '#64748b',
+            transition: 'all 0.2s',
+          }}
+        >
+          🤖 AI ตีความฝัน
+        </button>
+      </div>
+
+      {/* AI Mode */}
+      {activeMode === 'ai' && <AiDreamPanel />}
+
+      {/* Browse mode */}
+      {activeMode === 'browse' && <>
 
       {/* Search */}
       <div style={{ position: 'relative' }}>
@@ -378,6 +578,8 @@ export default function DreamInterpreter({ selected, onSelectionChange, isPremiu
           <p style={{ fontSize: 14 }}>ไม่พบความฝันที่ตรงกับการค้นหา</p>
         </div>
       )}
+
+      </> /* end browse mode */}
     </div>
   )
 }

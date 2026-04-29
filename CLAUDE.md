@@ -1,8 +1,9 @@
 # LottoMind — Claude Code Reference
 
-ระบบทำนายหวยไทยอัจฉริยะ ใช้สถิติ + ความฝัน + โหราศาสตร์ไทย  
-**React SPA + Express backend** — Auth & DB ผ่าน Supabase, Payment ผ่าน Omise  
-Dev mode ไม่มี Supabase/Omise → fallback ทุกอย่างไปที่ `localStorage` อัตโนมัติ
+ระบบทำนายหวยไทยอัจฉริยะ ใช้สถิติ + ความฝัน + โหราศาสตร์ไทย + AI  
+**React SPA + Express backend** — Auth & DB ผ่าน Supabase, Payment ผ่าน Omise, AI ผ่าน Anthropic  
+Dev mode ไม่มี Supabase/Omise → fallback ทุกอย่างไปที่ `localStorage` อัตโนมัติ  
+**ทุก feature ใช้ฟรีทั้งหมด** — ไม่มี premium lock ใน production
 
 ---
 
@@ -39,6 +40,7 @@ SUPABASE_SERVICE_ROLE_KEY=eyJ...   # ห้ามใส่ใน frontend เด
 OMISE_SECRET_KEY=skey_test_...
 OMISE_PUBLIC_KEY=pkey_test_...
 OMISE_WEBHOOK_SECRET=whsec_...
+ANTHROPIC_API_KEY=sk-ant-api03-...  # optional — AI Dream Interpreter + Vision Scanner
 PORT=4000
 FRONTEND_URL=http://localhost:3000
 NODE_ENV=development
@@ -66,10 +68,11 @@ NODE_ENV=development
 ### Backend (`server/`)
 | Layer        | Library                                    |
 |--------------|--------------------------------------------|
-| Runtime      | Node.js (≥18)                              |
+| Runtime      | Node.js (≥18) — native fetch built-in      |
 | Framework    | Express 4                                  |
 | Payment      | omise (official Node SDK)                  |
 | DB           | @supabase/supabase-js (service-role)       |
+| AI           | Anthropic API (claude-3-haiku) via fetch   |
 | Helpers      | cors, dotenv                               |
 
 ---
@@ -108,7 +111,7 @@ NODE_ENV=development
     │   └── db.ts               # DB operations (Supabase ↔ localStorage fallback)
     │
     ├── data/
-    │   ├── lotteryHistory.ts   # 32 historical draws + getNextDrawDate()
+    │   ├── lotteryHistory.ts   # 55 REAL draws (Jan 2024 – Apr 2026) + getNextDrawDate()
     │   └── dreamDatabase.ts    # 60+ dream entries
     │
     ├── utils/
@@ -121,14 +124,16 @@ NODE_ENV=development
         ├── Layout.tsx          # Header + mobile nav (admin tab visible when isAdmin)
         ├── Logo.tsx            # SVG hexagonal gem logo
         ├── AuthModal.tsx       # Login / Register modal
-        ├── SubscriptionModal.tsx  # 59 THB plan + payment UI
+        ├── SubscriptionModal.tsx  # Donate modal (QR/PromptPay, no session required)
         ├── AdminPanel.tsx      # Admin: users, payments, premium grant/revoke
         ├── PaywallOverlay.tsx  # Blur + lock overlay
-        ├── Dashboard.tsx       # Countdown, latest result, hot/cold balls
-        ├── Predictor.tsx       # ทำนายเลข 2/3/6 ตัว (PREMIUM, responsive 2-col)
-        ├── DreamInterpreter.tsx   # ฝันแล้วได้เลข
-        ├── Statistics.tsx      # สถิติ (advanced = PREMIUM)
-        ├── AstrologyPanel.tsx  # โหราศาสตร์ไทย + ดวงประจำเดือน
+        ├── Dashboard.tsx       # Live countdown, latest result, hot/cold balls, community trending
+        ├── Predictor.tsx       # ทำนายเลข 2/3/6 ตัว (slot machine loader + particle burst)
+        ├── DreamInterpreter.tsx   # ฝันแล้วได้เลข (browse mode + AI mode)
+        ├── NumberScanner.tsx   # 📷 สแกนเลขด้วย AI (camera/upload → Vision AI)
+        ├── NumberJournal.tsx   # บันทึกเลข + ติดตามผล
+        ├── Statistics.tsx      # สถิติ + Heatmap (advanced = PREMIUM)
+        ├── AstrologyPanel.tsx  # โหราศาสตร์ไทย + ดวงประจำเดือน + draw strength
         └── HistoryManager.tsx  # ประวัติการออกรางวัล
 ```
 
@@ -264,6 +269,8 @@ Backend → verify HMAC-SHA256 signature
 | `POST` | `/api/payment/promptpay` | Bearer JWT | PromptPay QR |
 | `GET`  | `/api/payment/status/:id` | Bearer JWT | Poll charge status |
 | `POST` | `/api/payment/webhook` | HMAC signature | Omise webhook |
+| `POST` | `/api/ai/dream` | — (public) | AI Dream Interpreter |
+| `POST` | `/api/ai/scan` | — (public) | Vision AI number scanner |
 | `GET`  | `/health` | — | Health check |
 
 ---
@@ -282,7 +289,7 @@ Backend → verify HMAC-SHA256 signature
 
 ```typescript
 TabType            // 'dashboard' | 'predict' | 'dream' | 'statistics' | 'astrology' | 'history'
-ExtendedTabType    // TabType | 'admin'  (defined locally in App.tsx + Layout.tsx)
+ExtendedTabType    // TabType | 'journal' | 'scanner' | 'admin'  (defined locally in App.tsx + Layout.tsx)
 SubscriptionStatus // 'free' | 'premium' | 'expired'
 
 UserSession {
@@ -304,7 +311,97 @@ DreamSelection     // dreamId, thaiName, twoDigit[], threeDigit[], confidence
 AstrologyProfile   // birthDate, element, thaiZodiac, luckyNumbers[], luckyDays[], luckyColors[], fortune, personalNumber
 PredictedNumber    // number, score, confidence, reasons[], factors{statistical,dream,astrology,pattern}
 PredictionResult   // twoDigit[], threeDigit[], sixDigit[], generatedAt, drawDate, inputFactors
+JournalEntry       // id, drawDate, numbers[{type,value}], note?, checkedResult?, hitPrize?, createdAt
 ```
+
+---
+
+## AI Features (`server/index.js`)
+
+### AI Dream Interpreter (`POST /api/ai/dream`)
+```typescript
+// Request
+{ dreamText: string }  // Thai natural language, max 1000 chars
+
+// Response
+{
+  keywords: string[]       // สิ่งที่พบในความฝัน (max 6)
+  interpretation: string   // คำอธิบาย
+  twoDigits: number[]      // เลข 2 ตัวมงคล (4-8 ตัว)
+  threeDigits: number[]    // เลข 3 ตัวมงคล (2-6 ตัว)
+  confidence: number       // 50-95
+  luckyElements: string[]  // สี/ทิศ/ธาตุ (max 3)
+  isFallback?: boolean     // true ถ้าไม่มี API key
+}
+```
+- ใช้ claude-3-haiku-20240307 (เร็ว ราคาถูก)
+- **Fallback mode**: ถ้าไม่มี `ANTHROPIC_API_KEY` → คืน random numbers (ไม่ crash)
+- Frontend: `DreamInterpreter.tsx` → mode toggle `browse` / `ai`
+
+### Vision AI Scanner (`POST /api/ai/scan`)
+```typescript
+// Request
+{ imageBase64: string, mimeType?: string }  // base64 image (max 5 MB)
+
+// Response
+{
+  numbers: string[]       // ตัวเลขทั้งหมดที่พบในภาพ
+  luckyNumbers: string[]  // เลขมงคลแนะนำ
+  interpretation: string
+  confidence: number
+}
+```
+- ใช้ Claude Vision API (image + text input)
+- Frontend: `NumberScanner.tsx` → drag-drop / gallery / camera capture
+- ตัวอย่าง input: สลาก, ป้ายทะเบียน, บ้านเลขที่, ปฏิทิน
+
+### Shared helper
+```javascript
+callClaude(messages, systemPrompt, maxTokens)  // wrapper around Anthropic API
+```
+
+---
+
+## Real Lottery Data (`src/data/lotteryHistory.ts`)
+
+**55 real draws** from January 2024 – April 2026:
+- Source: GLO (Government Lottery Office) via thethaiger.com  
+- ข้อมูลจริงทุก draw: firstPrize, threeDigitFront[2], threeDigitBack[2], twoDigitBack
+- Jan/May draws: date shifts apply (17th, 2nd instead of 16th/1st)
+- **Note**: 2024-10-16 front-3-digit เป็น approximation (verified: 482962, 2d:00)
+
+---
+
+## New UI Features
+
+### Dashboard
+- Live countdown (วินาที) พร้อม animation
+- Community trending numbers (top 8 จาก stats + flavor text)
+- Animated gradient border (`.gb-animated`) บน hero card
+
+### DreamInterpreter
+- **Browse mode**: เลือกจากฐานข้อมูล 60+ รายการ + Dream Combo analyzer
+- **AI mode**: พิมพ์ภาษาไทย → AI วิเคราะห์ → keywords + เลขมงคล
+
+### NumberScanner (tab: `scanner`)
+- Drag-drop หรือ click อัปโหลด
+- ถ่ายรูปผ่าน camera (mobile)
+- Preview ภาพก่อนวิเคราะห์
+- แสดงตัวเลขทั้งหมดที่พบ + เลขมงคลแนะนำ
+
+### Statistics
+- Heatmap view (10×10 grid 00-99) แสดงความถี่ด้วยสี
+
+### AstrologyPanel
+- Draw Strength: แสดงพลังงาน 4 งวดถัดไป (score 0-99 + stars)
+
+### Predictor
+- Slot machine loader animation ระหว่างรอ
+- Particle burst เมื่อผลออก
+
+### NumberJournal (tab: `journal`)
+- บันทึกเลขที่จะซื้อ พร้อม draw date
+- Auto-detect ว่าถูกรางวัลหรือไม่
 
 ---
 
@@ -519,8 +616,10 @@ const res = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/charge`, {
 - [ ] ติดตั้ง Omise.js ใน `index.html` สำหรับ card tokenization  
       `<script src="https://cdn.omise.co/omise.js"></script>`
 - [ ] ตั้ง Omise Webhook URL → `https://your-domain/api/payment/webhook`
+- [ ] ตั้งค่า `ANTHROPIC_API_KEY` ใน backend env (optional แต่แนะนำสำหรับ AI features)
 - [ ] Deploy backend (Railway / Render / Fly.io) — ต้องใช้ HTTPS
 - [ ] Set `FRONTEND_URL` ใน backend env เป็น production domain
+- [ ] Set `VITE_API_URL` ใน frontend env เป็น backend URL จริง
 - [ ] สร้าง admin user: ตั้ง `is_admin = TRUE` ใน `profiles` table โดยตรง
 
 ---

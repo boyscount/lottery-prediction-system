@@ -10,9 +10,10 @@ import AuthModal from './components/AuthModal'
 import SubscriptionModal from './components/SubscriptionModal'
 import AdminPanel from './components/AdminPanel'
 import NumberJournal from './components/NumberJournal'
+import NumberScanner from './components/NumberScanner'
 import { lotteryHistory } from './data/lotteryHistory'
 import { TabType, DreamSelection, AstrologyProfile, LotteryDraw, UserSession, JournalEntry } from './types'
-type ExtendedTabType = TabType | 'journal' | 'admin'
+type ExtendedTabType = TabType | 'journal' | 'scanner' | 'admin'
 import { getSession, getSessionAsync, buildUserSession } from './utils/auth'
 import { supabase, supabaseReady } from './lib/supabase'
 import { getDraws, getDreams, getAstrology, saveDraws, saveDreams, saveAstrology, getJournal, saveJournal } from './lib/db'
@@ -180,6 +181,9 @@ export default function App() {
         )}
         {activeTab === 'journal' && (
           <NumberJournal entries={journalEntries} draws={draws} onEntriesChange={setJournalEntries} />
+        )}
+        {activeTab === 'scanner' && (
+          <NumberScanner />
         )}
         {activeTab === 'admin' && session?.isAdmin && (
           <AdminPanel session={session} />

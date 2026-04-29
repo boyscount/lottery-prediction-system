@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Home, Target, Moon, BarChart2, Star, BookOpen, LogOut, Heart, LogIn, Shield, BookMarked } from 'lucide-react'
+import { Home, Target, Moon, BarChart2, Star, BookOpen, LogOut, Heart, LogIn, Shield, BookMarked, Camera } from 'lucide-react'
 import { TabType, UserSession } from '../types'
 import { logoutUser } from '../utils/auth'
 import Logo from './Logo'
 import clsx from 'clsx'
 
-type ExtendedTabType = TabType | 'journal' | 'admin'
+type ExtendedTabType = TabType | 'journal' | 'scanner' | 'admin'
 
 interface LayoutProps {
   activeTab: ExtendedTabType
@@ -21,6 +21,7 @@ const TABS: { id: ExtendedTabType; label: string; short: string; Icon: React.Ele
   { id: 'dashboard',  label: 'หน้าหลัก',      short: 'หลัก',    Icon: Home },
   { id: 'predict',    label: 'ทำนายเลข',      short: 'ทำนาย',   Icon: Target, premium: true },
   { id: 'dream',      label: 'ฝันแล้วได้เลข', short: 'ฝัน',     Icon: Moon },
+  { id: 'scanner',    label: 'สแกนเลข AI',    short: 'สแกน',    Icon: Camera },
   { id: 'statistics', label: 'สถิติ',           short: 'สถิติ',   Icon: BarChart2 },
   { id: 'astrology',  label: 'โหราศาสตร์',     short: 'ดวง',     Icon: Star },
   { id: 'history',    label: 'ประวัติ',         short: 'ประวัติ', Icon: BookOpen },
@@ -165,16 +166,17 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
               <span style={{ fontSize: 13, fontWeight: 600, color: '#c4b5fd' }}>
                 {currentTab?.label}
               </span>
-              {/* Donate button — always visible on mobile */}
+              {/* Donate button — always visible on mobile (icon only) */}
               <button
                 onClick={onShowSubscription}
+                title="สนับสนุนผู้พัฒนา"
                 style={{
                   background: 'rgba(244,114,182,0.12)', border: '1px solid rgba(244,114,182,0.3)',
-                  borderRadius: 8, padding: '4px 9px', fontSize: 11, color: '#f9a8d4', cursor: 'pointer',
-                  fontFamily: 'Sarabun, sans-serif', display: 'flex', alignItems: 'center', gap: 4,
+                  borderRadius: 8, padding: '5px 7px', color: '#f9a8d4', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}
               >
-                <Heart size={11} /> สนับสนุน
+                <Heart size={13} />
               </button>
               {session ? (
                 <div ref={menuRefMob} style={{ position: 'relative' }}>

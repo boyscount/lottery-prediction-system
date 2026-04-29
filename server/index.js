@@ -5,6 +5,32 @@ const crypto = require('crypto')
 const Omise = require('omise')
 const { createClient } = require('@supabase/supabase-js')
 
+// ── Anthropic (optional — AI features) ───────────────────────────
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
+async function callClaude(messages, systemPrompt, maxTokens = 512) {
+  if (!ANTHROPIC_KEY) throw new Error('ANTHROPIC_API_KEY not configured')
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': ANTHROPIC_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-3-haiku-20240307',
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages,
+    }),
+  })
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Anthropic API error: ${res.status} ${err}`)
+  }
+  const data = await res.json()
+  return data.content[0].text
+}
+
 const app = express()
 const PORT = process.env.PORT || 4000
 
@@ -173,6 +199,127 @@ async function activatePremium(userId, chargeId, method, amount) {
     updated_at: new Date().toISOString(),
   }, { onConflict: 'omise_charge_id' })
 }
+
+// ── POST /api/ai/dream — AI Dream Interpreter ─────────────────────
+app.post('/api/ai/dream', async (req, res) => {
+  const { dreamText } = req.body
+  if (!dreamText || typeof dreamText !== 'string' || dreamText.length > 1000) {
+    return res.status(400).json({ error: 'dreamText required (max 1000 chars)' })
+  }
+
+  // Fallback if no API key (dev mode)
+  if (!ANTHROPIC_KEY) {
+    return res.json(fallbackDreamResult(dreamText))
+  }
+
+  try {
+    const systemPrompt = `คุณเป็นผู้เชี่ยวชาญการตีความฝันและเลขมงคลไทย ตอบเป็น JSON เท่านั้น
+
+รูปแบบ JSON ที่ต้องตอบ:
+{
+  "keywords": ["คำสำคัญ1", "คำสำคัญ2", ...],  // สิ่งที่ฝันเห็น (ไทย) สูงสุด 5 อย่าง
+  "interpretation": "คำอธิบายความหมายของฝัน 1-2 ประโยค",
+  "twoDigits": [12, 34, 56, 78],  // เลข 2 ตัวมงคล 4-6 ตัว (integer 0-99)
+  "threeDigits": [123, 456, 789],  // เลข 3 ตัวมงคล 2-4 ตัว (integer 0-999)
+  "confidence": 72,  // ความมั่นใจ 50-90 (integer)
+  "luckyElements": ["สี/ทิศ/ธาตุที่เป็นมงคล"]  // สูงสุด 3 อย่าง
+}
+
+ตีความตามหลักโหราศาสตร์ไทยและความเชื่อเรื่องเลขมงคล ห้ามตอบนอกเหนือจาก JSON`
+
+    const raw = await callClaude(
+      [{ role: 'user', content: `ฉันฝันว่า: ${dreamText}` }],
+      systemPrompt,
+      600
+    )
+
+    // Extract JSON from response (handle markdown code blocks)
+    const jsonMatch = raw.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) throw new Error('Invalid AI response format')
+    const result = JSON.parse(jsonMatch[0])
+
+    // Validate and sanitize
+    res.json({
+      keywords: (result.keywords || []).slice(0, 6).map(String),
+      interpretation: String(result.interpretation || '').slice(0, 300),
+      twoDigits: (result.twoDigits || []).filter(n => Number.isInteger(n) && n >= 0 && n <= 99).slice(0, 8),
+      threeDigits: (result.threeDigits || []).filter(n => Number.isInteger(n) && n >= 0 && n <= 999).slice(0, 6),
+      confidence: Math.min(95, Math.max(50, Number(result.confidence) || 70)),
+      luckyElements: (result.luckyElements || []).slice(0, 3).map(String),
+    })
+  } catch (err) {
+    console.error('AI dream error:', err.message)
+    res.json(fallbackDreamResult(dreamText))
+  }
+})
+
+function fallbackDreamResult(text) {
+  // Simple keyword-based fallback (no AI key)
+  const keywords = text.split(/\s+/).filter(w => w.length >= 2).slice(0, 4)
+  const seed = text.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+  const rng = (n) => ((seed * 9301 + 49297) % 233280 / 233280 * n) | 0
+  return {
+    keywords,
+    interpretation: 'ฝันนี้บ่งบอกถึงโชคลาภที่กำลังจะมาถึง ควรสังเกตสัญญาณรอบข้าง',
+    twoDigits: [rng(99), rng(99), rng(99), rng(99)].map(n => Math.max(1, n)),
+    threeDigits: [rng(999), rng(999), rng(999)].map(n => Math.max(1, n)),
+    confidence: 60 + rng(20),
+    luckyElements: ['สีเหลือง', 'ทิศตะวันออก'],
+    isFallback: true,
+  }
+}
+
+// ── POST /api/ai/scan — Vision AI Number Scanner ──────────────────
+app.post('/api/ai/scan', async (req, res) => {
+  const { imageBase64, mimeType = 'image/jpeg' } = req.body
+  if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' })
+
+  if (!ANTHROPIC_KEY) {
+    return res.json({
+      numbers: ['12', '34', '56'],
+      luckyNumbers: ['34', '12'],
+      interpretation: 'ไม่ได้ตั้งค่า API key — แสดงตัวอย่างข้อมูล',
+      isFallback: true,
+    })
+  }
+
+  try {
+    const systemPrompt = `คุณเป็น AI วิเคราะห์ตัวเลขในรูปภาพ ตอบเป็น JSON เท่านั้น
+รูปแบบ:
+{
+  "numbers": ["12", "34", "56"],  // ตัวเลขทั้งหมดที่เห็นในภาพ (string)
+  "luckyNumbers": ["34"],         // เลขมงคลที่แนะนำ 2-4 ตัว
+  "interpretation": "คำอธิบายสั้น ๆ เกี่ยวกับตัวเลขที่เห็น",
+  "confidence": 80
+}`
+
+    const raw = await callClaude(
+      [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mimeType, data: imageBase64 } },
+          { type: 'text', text: 'โปรดวิเคราะห์ตัวเลขทั้งหมดในภาพนี้และแนะนำเลขมงคล' },
+        ],
+      }],
+      systemPrompt,
+      400
+    )
+
+    const jsonMatch = raw.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) throw new Error('Invalid AI response')
+    const result = JSON.parse(jsonMatch[0])
+
+    res.json({
+      numbers: (result.numbers || []).slice(0, 20).map(String),
+      luckyNumbers: (result.luckyNumbers || []).slice(0, 6).map(String),
+      interpretation: String(result.interpretation || '').slice(0, 300),
+      confidence: Math.min(99, Math.max(30, Number(result.confidence) || 70)),
+    })
+  } catch (err) {
+    console.error('AI scan error:', err.message)
+    res.status(500).json({ error: 'AI scan failed: ' + err.message })
+  }
+})
 
 // ── Health check ─────────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ ok: true, ts: new Date().toISOString() }))

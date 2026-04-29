@@ -926,11 +926,11 @@ body::after {
   display: flex; flex-direction: column; align-items: center;
   background: rgba(124,58,237,0.08);
   border: 1px solid rgba(124,58,237,0.2);
-  border-radius: 14px; padding: 10px 14px; min-width: 62px;
+  border-radius: 12px; padding: 8px 10px; min-width: 52px;
 }
 .countdown-val {
   font-family: 'Space Grotesk', monospace; font-weight: 800;
-  font-size: 30px; line-height: 1;
+  font-size: 24px; line-height: 1;
   background: linear-gradient(135deg, #c4b5fd, #67e8f9);
   -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
 }
@@ -940,7 +940,12 @@ body::after {
   filter: drop-shadow(0 0 10px rgba(239,68,68,0.6));
 }
 .countdown-lbl {
-  font-size: 10px; color: #4b5563; margin-top: 3px; letter-spacing: 0.04em;
+  font-size: 9px; color: #4b5563; margin-top: 3px; letter-spacing: 0.04em;
+}
+@media (min-width: 480px) {
+  .countdown-block { padding: 10px 16px; min-width: 64px; border-radius: 14px; }
+  .countdown-val   { font-size: 32px; }
+  .countdown-lbl   { font-size: 10px; }
 }
 
 /* ══════════════════════ JOURNAL ══════════════════════ */

@@ -65,8 +65,8 @@ export default function Dashboard({ draws, onNavigate }: Props) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
       {/* ══ HERO ══ */}
-      <div className="gb-animated" style={{ borderRadius: 28, overflow: 'hidden' }}>
-        <div style={{ position: 'relative', padding: '28px 24px', textAlign: 'center', overflow: 'hidden' }}>
+      <div className="gb-animated" style={{ borderRadius: 28 }}>
+        <div style={{ position: 'relative', padding: '24px 16px', textAlign: 'center', overflow: 'visible' }}>
           {/* Glow layers */}
           <div style={{
             position: 'absolute', inset: 0, pointerEvents: 'none',
@@ -82,7 +82,7 @@ export default function Dashboard({ draws, onNavigate }: Props) {
             </div>
 
             {/* Live countdown blocks */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 18 }}>
               {[
                 { val: days,    lbl: 'วัน' },
                 { val: hours,   lbl: 'ชม.' },
@@ -96,7 +96,7 @@ export default function Dashboard({ draws, onNavigate }: Props) {
                     </span>
                     <span className="countdown-lbl">{b.lbl}</span>
                   </div>
-                  {i < 3 && <span style={{ color: '#374151', fontSize: 22, fontWeight: 800, marginBottom: 14, lineHeight: 1 }}>:</span>}
+                  {i < 3 && <span style={{ color: '#374151', fontSize: 18, fontWeight: 800, marginBottom: 14, lineHeight: 1, flexShrink: 0 }}>:</span>}
                 </React.Fragment>
               ))}
             </div>
