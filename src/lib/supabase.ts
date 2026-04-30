@@ -14,6 +14,8 @@ export const supabase = createClient(
       persistSession: true,
       storageKey: 'lottomind_auth',
       autoRefreshToken: true,
+      // bypass navigator lock — ป้องกัน NavigatorLockAcquireTimeoutError
+      lock: <R>(_name: string, _timeout: number, fn: () => Promise<R>): Promise<R> => fn(),
     },
   }
 )

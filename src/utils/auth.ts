@@ -48,24 +48,35 @@ export function incrementRateLimit() {
   } catch {}
 }
 
-// ── Premium check — ทุก feature ฟรี, donate เพื่อสนับสนุน ─────
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function isPremium(_session: UserSession | null): boolean {
+// ── Premium check ───────────────────────────────────────────────
+export function isPremium(session: UserSession | null): boolean {
+  if (!session) return false
+  const { status, expiresAt } = session.subscription
+  if (status !== 'premium') return false
+  if (expiresAt && new Date(expiresAt) < new Date()) return false
   return true
 }
 
 // ── Convert Supabase session → app UserSession ──────────────────
-export async function buildUserSession(supabaseUser: { id: string; email?: string }, sub?: { status: string; expires_at: string | null; started_at: string | null } | null): Promise<UserSession | null> {
+export async function buildUserSession(
+  supabaseUser: { id: string; email?: string },
+  sub?: { status: string; expires_at: string | null; started_at: string | null } | null,
+  accessToken?: string   // ← Supabase JWT ใช้เป็น Bearer token เรียก backend
+): Promise<UserSession | null> {
   const { data: profile } = await supabase
     .from('profiles')
     .select('username, avatar_color, is_admin')
     .eq('id', supabaseUser.id)
-    .single()
+    .maybeSingle()
 
   const subscription = sub ?? (await (async () => {
-    const { data } = await supabase.from('subscriptions').select('status,started_at,expires_at').eq('user_id', supabaseUser.id).single()
+    const { data } = await supabase.from('subscriptions').select('status,started_at,expires_at').eq('user_id', supabaseUser.id).maybeSingle()
     return data
   })())
+
+  // ใช้ accessToken ที่ส่งมา หรือ fallback เป็น random token
+  // ⚠️ ไม่เรียก supabase.auth.getSession() ซ้ำ — อาจค้างเพราะ internal lock หลัง signUp/signIn
+  const token = accessToken ?? generateToken()
 
   const exp = new Date()
   exp.setDate(exp.getDate() + 30)
@@ -74,7 +85,7 @@ export async function buildUserSession(supabaseUser: { id: string; email?: strin
     userId: supabaseUser.id,
     username: profile?.username ?? supabaseUser.email?.split('@')[0] ?? 'user',
     email: supabaseUser.email ?? '',
-    token: generateToken(),
+    token,   // ← Supabase JWT จริง
     createdAt: new Date().toISOString(),
     expiresAt: exp.toISOString(),
     avatarColor: profile?.avatar_color ?? '#7c3aed',
@@ -100,7 +111,8 @@ export async function getSessionAsync(): Promise<UserSession | null> {
   }
   const { data: { session } } = await supabase.auth.getSession()
   if (!session?.user) return null
-  return buildUserSession(session.user)
+  // ส่ง access_token โดยตรง — ไม่ให้ buildUserSession เรียก getSession ซ้ำ
+  return buildUserSession(session.user, null, session.access_token)
 }
 
 export function getSession(): UserSession | null {
@@ -125,18 +137,43 @@ export async function registerUser(username: string, email: string, password: st
 
   if (!uname || uname.length < 3) return { success: false, error: 'ชื่อผู้ใช้ต้องมีอย่างน้อย 3 ตัวอักษร' }
   if (uname.length > 30) return { success: false, error: 'ชื่อผู้ใช้ยาวเกินไป' }
+  if (!/^[a-zA-Z0-9ก-๙_]+$/.test(uname)) return { success: false, error: 'ชื่อผู้ใช้ใช้ได้เฉพาะตัวอักษร ตัวเลข และ _ เท่านั้น' }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return { success: false, error: 'รูปแบบอีเมลไม่ถูกต้อง' }
   if (password.length < 6) return { success: false, error: 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร' }
 
   if (supabaseReady) {
+    // ── ตรวจ username ซ้ำก่อน signUp ── ป้องกัน orphaned auth user
+    const { data: existingUsername } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('username', uname)
+      .maybeSingle()
+    if (existingUsername) return { success: false, error: 'ชื่อผู้ใช้นี้มีผู้ใช้งานแล้ว' }
+
     const { data, error } = await supabase.auth.signUp({
       email: em,
       password,
       options: { data: { username: uname, avatar_color: randomAvatarColor() } },
     })
-    if (error) return { success: false, error: error.message }
+
+    if (error) {
+      const msg = error.message?.toLowerCase() ?? ''
+      if (msg.includes('already registered') || msg.includes('already been registered') || msg.includes('user already'))
+        return { success: false, error: 'อีเมลนี้มีผู้ใช้งานแล้ว' }
+      if (msg.includes('invalid email'))
+        return { success: false, error: 'รูปแบบอีเมลไม่ถูกต้อง' }
+      if (msg.includes('password'))
+        return { success: false, error: 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร' }
+      return { success: false, error: error.message }
+    }
+
     if (!data.user) return { success: false, error: 'สมัครสมาชิกไม่สำเร็จ' }
-    const session = await buildUserSession(data.user)
+
+    // Supabase คืน identities:[] เมื่ออีเมลนี้มีอยู่แล้ว (เฉพาะเมื่อปิด email confirmation)
+    if (data.user.identities?.length === 0)
+      return { success: false, error: 'อีเมลนี้มีผู้ใช้งานแล้ว' }
+
+    const session = await buildUserSession(data.user, null, data.session?.access_token)
     if (session) saveSessionLocal(session)
     return { success: true, session: session ?? undefined }
   }
@@ -167,15 +204,26 @@ export async function loginUser(credential: string, password: string) {
     // Try email login first, then look up by username
     let loginEmail = cred
     if (!cred.includes('@')) {
-      const { data } = await supabase.from('profiles').select('id').eq('username', cred).single()
+      const { data } = await supabase.from('profiles').select('id').eq('username', cred).maybeSingle()
       if (!data) return { success: false, error: 'ไม่พบบัญชีผู้ใช้' }
       // Can't get email from profiles — must sign in with email
       return { success: false, error: 'กรุณาใช้อีเมลในการเข้าสู่ระบบ' }
     }
     const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password })
-    if (error) return { success: false, error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' }
+    if (error) {
+      // Map Supabase error messages to Thai
+      const msg = error.message?.toLowerCase() ?? ''
+      if (msg.includes('invalid login credentials') || msg.includes('invalid credentials'))
+        return { success: false, error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' }
+      if (msg.includes('email not confirmed'))
+        return { success: false, error: 'อีเมลยังไม่ได้รับการยืนยัน — กรุณาตรวจสอบกล่องจดหมาย' }
+      if (msg.includes('too many requests') || msg.includes('rate limit'))
+        return { success: false, error: 'ลองใหม่อีกครั้งในอีกสักครู่ (ลองบ่อยเกินไป)' }
+      // Fallback: show actual error for easier debugging
+      return { success: false, error: error.message }
+    }
     if (!data.user) return { success: false, error: 'เข้าสู่ระบบไม่สำเร็จ' }
-    const session = await buildUserSession(data.user)
+    const session = await buildUserSession(data.user, null, data.session?.access_token)
     if (session) saveSessionLocal(session)
     return { success: true, session: session ?? undefined }
   }
@@ -191,8 +239,29 @@ export async function loginUser(credential: string, password: string) {
 }
 
 export async function logoutUser() {
-  if (supabaseReady) await supabase.auth.signOut()
-  clearSessionLocal()
+  // Remove lottomind_session first so TOKEN_REFRESHED guard in App.tsx won't restore session
+  try { localStorage.removeItem(SESSION_KEY) } catch {}
+  try { localStorage.removeItem(RATE_KEY) } catch {}
+
+  if (supabaseReady) {
+    try {
+      // scope: 'local' — ล้างเฉพาะ browser นี้ ไม่ต้องรอ server lock
+      // Must call signOut BEFORE removing lottomind_auth so Supabase can find the session to clear
+      await supabase.auth.signOut({ scope: 'local' })
+    } catch (e) {
+      console.warn('signOut error:', e)
+    }
+  }
+
+  // Final cleanup — clear any remaining auth keys
+  try { localStorage.removeItem('lottomind_auth') } catch {}
+  try {
+    // Clear any other Supabase storage keys that may have been created
+    const keysToRemove = Object.keys(localStorage).filter(k =>
+      k.startsWith('sb-') || k.startsWith('supabase.')
+    )
+    keysToRemove.forEach(k => localStorage.removeItem(k))
+  } catch {}
 }
 
 export async function activatePremium(session: UserSession): Promise<UserSession> {

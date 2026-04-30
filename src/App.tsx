@@ -97,17 +97,27 @@ export default function App() {
     getJournal(session?.userId).then(setJournalEntries)
   }, [session?.userId])
 
+  // Clear auth error hash from URL (เช่น otp_expired จาก email link หมดอายุ)
+  useEffect(() => {
+    if (window.location.hash.includes('error=')) {
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+  }, [])
+
   // Supabase auth state listener
   useEffect(() => {
     if (!supabaseReady) return
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, supabaseSession) => {
       if (event === 'SIGNED_IN' && supabaseSession?.user) {
-        const s = await buildUserSession(supabaseSession.user)
+        const s = await buildUserSession(supabaseSession.user, null, supabaseSession.access_token)
         if (s) setSession(s)
       } else if (event === 'SIGNED_OUT') {
         setSession(null)
       } else if (event === 'TOKEN_REFRESHED' && supabaseSession?.user) {
-        const s = await getSessionAsync()
+        // Only restore if there's actually a valid local session (not post-logout)
+        const localRaw = localStorage.getItem('lottomind_session')
+        if (!localRaw) return   // already logged out — don't restore
+        const s = await buildUserSession(supabaseSession.user, null, supabaseSession.access_token)
         if (s) setSession(s)
       }
     })
@@ -168,6 +178,7 @@ export default function App() {
             isPremium={true}
             onShowAuth={() => openAuth('register')}
             onShowSubscription={() => setShowSub(true)}
+            session={session}
           />
         )}
         {activeTab === 'statistics' && (
@@ -183,7 +194,7 @@ export default function App() {
           <NumberJournal entries={journalEntries} draws={draws} onEntriesChange={setJournalEntries} />
         )}
         {activeTab === 'scanner' && (
-          <NumberScanner />
+          <NumberScanner session={session} onShowAuth={() => openAuth('register')} onShowSubscription={() => setShowSub(true)} />
         )}
         {activeTab === 'admin' && session?.isAdmin && (
           <AdminPanel session={session} />

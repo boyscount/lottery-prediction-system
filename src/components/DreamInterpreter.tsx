@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react'
 import { dreamDatabase, categoryLabels } from '../data/dreamDatabase'
-import { DreamCategory, DreamSelection } from '../types'
+import { DreamCategory, DreamSelection, UserSession } from '../types'
 import clsx from 'clsx'
 
 interface Props {
@@ -9,9 +9,12 @@ interface Props {
   isPremium: boolean
   onShowAuth: () => void
   onShowSubscription: () => void
+  session?: UserSession | null
 }
 
 const CATS = Object.keys(categoryLabels) as DreamCategory[]
+
+import { isPremium } from '../utils/auth'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
@@ -26,11 +29,17 @@ interface AiDreamResult {
   isFallback?: boolean
 }
 
-function AiDreamPanel() {
+function AiDreamPanel({ session, onShowAuth, onShowSubscription }: {
+  session?: UserSession | null
+  onShowAuth: () => void
+  onShowSubscription: () => void
+}) {
   const [text, setText]       = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult]   = useState<AiDreamResult | null>(null)
   const [error, setError]     = useState('')
+
+  const userIsPremium = isPremium(session ?? null)
 
   async function handleAnalyze() {
     if (!text.trim() || text.length < 5) {
@@ -41,11 +50,16 @@ function AiDreamPanel() {
     setLoading(true)
     setResult(null)
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.token) headers['Authorization'] = `Bearer ${session.token}`
+
       const res = await fetch(`${API_URL}/api/ai/dream`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ dreamText: text }),
       })
+      if (res.status === 401) { setError('กรุณาเข้าสู่ระบบก่อนใช้ฟีเจอร์นี้'); return }
+      if (res.status === 403) { setError('ฟีเจอร์นี้สำหรับสมาชิก Premium เท่านั้น'); return }
       if (!res.ok) throw new Error(`Server error ${res.status}`)
       const data = await res.json()
       setResult(data)
@@ -56,8 +70,54 @@ function AiDreamPanel() {
     }
   }
 
+  // ── Paywall: ไม่ได้ login ────────────────────────────────────────
+  if (!session) {
+    return (
+      <div className="glass spring-in" style={{
+        borderRadius: 20, padding: 28, textAlign: 'center',
+        border: '1px solid rgba(124,58,237,0.3)',
+      }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>🤖</div>
+        <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 16, marginBottom: 6 }}>AI ตีความฝัน</div>
+        <div style={{ fontSize: 13, color: '#64748b', marginBottom: 20, lineHeight: 1.6 }}>
+          พิมพ์ความฝันของคุณ → AI วิเคราะห์เลขมงคลให้<br />
+          ต้องเข้าสู่ระบบและสมัคร Premium เพื่อใช้ฟีเจอร์นี้
+        </div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+          <button onClick={onShowAuth} className="btn-ghost press"
+            style={{ borderRadius: 12, padding: '10px 20px', fontSize: 13 }}>
+            🔑 เข้าสู่ระบบ
+          </button>
+          <button onClick={onShowAuth} className="btn-primary press"
+            style={{ borderRadius: 12, padding: '10px 20px', fontSize: 13, fontWeight: 700 }}>
+            ✨ สมัครฟรี
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Paywall: login แล้วแต่ยังไม่ Premium ────────────────────────
+  if (!userIsPremium) {
+    return (
+      <div className="gb-animated glass spring-in" style={{ borderRadius: 20, padding: 28, textAlign: 'center' }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>💎</div>
+        <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 16, marginBottom: 6 }}>ฟีเจอร์ Premium</div>
+        <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 20, lineHeight: 1.6 }}>
+          สวัสดี <strong style={{ color: '#c4b5fd' }}>{session.username}</strong> 👋<br />
+          AI ตีความฝันใช้ได้สำหรับ Premium เท่านั้น
+        </div>
+        <button onClick={onShowSubscription} className="btn-primary press"
+          style={{ borderRadius: 14, padding: '12px 28px', fontSize: 14, fontWeight: 700 }}>
+          💎 อัปเกรด Premium — 59 ฿/เดือน
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
       {/* Input */}
       <div className="glass" style={{ borderRadius: 18, padding: 18, border: '1px solid rgba(139,92,246,0.3)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -178,7 +238,7 @@ function AiDreamPanel() {
   )
 }
 
-export default function DreamInterpreter({ selected, onSelectionChange, isPremium, onShowAuth, onShowSubscription }: Props) {
+export default function DreamInterpreter({ selected, onSelectionChange, isPremium, onShowAuth, onShowSubscription, session }: Props) {
   const [search, setSearch]       = useState('')
   const [cat, setCat]             = useState<DreamCategory | 'all'>('all')
   const [expanded, setExpanded]   = useState<string | null>(null)
@@ -290,7 +350,7 @@ export default function DreamInterpreter({ selected, onSelectionChange, isPremiu
       </div>
 
       {/* AI Mode */}
-      {activeMode === 'ai' && <AiDreamPanel />}
+      {activeMode === 'ai' && <AiDreamPanel session={session} onShowAuth={onShowAuth} onShowSubscription={onShowSubscription} />}
 
       {/* Browse mode */}
       {activeMode === 'browse' && <>

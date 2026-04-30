@@ -58,8 +58,12 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  async function handleLogout() {
-    await logoutUser(); onSessionChange(null); setMenuOpen(false)
+  function handleLogout() {
+    // Clear UI state immediately — don't wait for async signOut
+    onSessionChange(null)
+    setMenuOpen(false)
+    // Fire-and-forget: clean up Supabase session + localStorage
+    logoutUser().catch((e) => console.warn('logout error:', e))
   }
 
   const currentTab = TABS.find(t => t.id === activeTab)

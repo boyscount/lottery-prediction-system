@@ -17,7 +17,7 @@ async function callClaude(messages, systemPrompt, maxTokens = 512) {
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-3-haiku-20240307',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: maxTokens,
       system: systemPrompt,
       messages,
@@ -35,9 +35,14 @@ const app = express()
 const PORT = process.env.PORT || 4000
 
 // ── Supabase admin client (service role — never expose to frontend) ──
+const supabaseReady = !!(
+  process.env.SUPABASE_URL &&
+  process.env.SUPABASE_SERVICE_ROLE_KEY &&
+  !process.env.SUPABASE_URL.includes('xxxxxxxxxxxxxxxxxxxx')
+)
 const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder',
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
@@ -49,9 +54,15 @@ const omise = Omise({
 
 // ── Middleware ────────────────────────────────────────────────────
 const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000').split(',')
+const isDev = process.env.NODE_ENV !== 'production'
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin || allowedOrigins.some(o => origin.startsWith(o.trim()))) return cb(null, true)
+    // Dev mode: allow all origins
+    if (isDev) return cb(null, true)
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return cb(null, true)
+    // Prod: check against FRONTEND_URL list
+    if (allowedOrigins.some(o => origin.startsWith(o.trim()))) return cb(null, true)
     cb(new Error('Not allowed by CORS'))
   },
   credentials: true,
@@ -59,7 +70,7 @@ app.use(cors({
 
 // Raw body for webhook signature verification
 app.use('/api/payment/webhook', express.raw({ type: 'application/json' }))
-app.use(express.json())
+app.use(express.json({ limit: '10mb' }))
 
 // ── Auth middleware ──────────────────────────────────────────────
 async function requireAuth(req, res, next) {
@@ -68,6 +79,44 @@ async function requireAuth(req, res, next) {
   const token = auth.slice(7)
   const { data: { user }, error } = await supabase.auth.getUser(token)
   if (error || !user) return res.status(401).json({ error: 'Invalid token' })
+  req.user = user
+  next()
+}
+
+// ── Premium middleware — ใช้กับ AI endpoints ─────────────────────
+// ชั้นที่ 1 (frontend) ป้องกัน UX, ชั้นนี้ enforce จริง
+async function requirePremium(req, res, next) {
+  // Dev mode (ไม่มี Supabase) → ข้ามการตรวจสอบ
+  if (!supabaseReady) return next()
+
+  // ต้องมี Bearer token
+  const auth = req.headers.authorization
+  if (!auth?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ', code: 'REQUIRE_LOGIN' })
+  }
+
+  // Verify JWT กับ Supabase Auth
+  const token = auth.slice(7)
+  const { data: { user }, error } = await supabase.auth.getUser(token)
+  if (error || !user) {
+    return res.status(401).json({ error: 'Session หมดอายุ กรุณาล็อกอินใหม่', code: 'INVALID_TOKEN' })
+  }
+
+  // ตรวจ subscription จาก DB (ไม่เชื่อ frontend เด็ดขาด)
+  const { data: sub } = await supabase
+    .from('subscriptions')
+    .select('status, expires_at')
+    .eq('user_id', user.id)
+    .single()
+
+  const isPremium =
+    sub?.status === 'premium' &&
+    (!sub.expires_at || new Date(sub.expires_at) > new Date())
+
+  if (!isPremium) {
+    return res.status(403).json({ error: 'ฟีเจอร์นี้สำหรับสมาชิก Premium เท่านั้น', code: 'REQUIRE_PREMIUM' })
+  }
+
   req.user = user
   next()
 }
@@ -200,8 +249,8 @@ async function activatePremium(userId, chargeId, method, amount) {
   }, { onConflict: 'omise_charge_id' })
 }
 
-// ── POST /api/ai/dream — AI Dream Interpreter ─────────────────────
-app.post('/api/ai/dream', async (req, res) => {
+// ── POST /api/ai/dream — AI Dream Interpreter (Premium only) ─────
+app.post('/api/ai/dream', requirePremium, async (req, res) => {
   const { dreamText } = req.body
   if (!dreamText || typeof dreamText !== 'string' || dreamText.length > 1000) {
     return res.status(400).json({ error: 'dreamText required (max 1000 chars)' })
@@ -269,8 +318,8 @@ function fallbackDreamResult(text) {
   }
 }
 
-// ── POST /api/ai/scan — Vision AI Number Scanner ──────────────────
-app.post('/api/ai/scan', async (req, res) => {
+// ── POST /api/ai/scan — Vision AI Number Scanner (Premium only) ──
+app.post('/api/ai/scan', requirePremium, async (req, res) => {
   const { imageBase64, mimeType = 'image/jpeg' } = req.body
   if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' })
 

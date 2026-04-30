@@ -74,6 +74,19 @@ CREATE TABLE IF NOT EXISTS public.user_astrology (
   updated_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ── User Journal (per-user) ────────────────────────
+CREATE TABLE IF NOT EXISTS public.user_journal (
+  id             TEXT PRIMARY KEY,
+  user_id        UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  draw_date      DATE NOT NULL,
+  numbers        JSONB NOT NULL DEFAULT '[]',
+  note           TEXT,
+  checked_result BOOLEAN DEFAULT FALSE,
+  hit_prize      TEXT,
+  created_at     TIMESTAMPTZ DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ── Indexes ────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_payments_user     ON public.payments(user_id);
 CREATE INDEX IF NOT EXISTS idx_payments_status   ON public.payments(status);
@@ -89,8 +102,9 @@ ALTER TABLE public.profiles      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payments      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lottery_draws ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.user_dreams   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_dreams    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_astrology ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_journal   ENABLE ROW LEVEL SECURITY;
 
 -- ── Profiles policies ──────────────────────────────
 CREATE POLICY "Users can view own profile"

@@ -104,7 +104,7 @@ export async function getAstrology(userId?: string): Promise<AstrologyProfile | 
     .from('user_astrology')
     .select('profile_data')
     .eq('user_id', userId)
-    .single()
+    .maybeSingle()
   return data?.profile_data ?? null
 }
 
@@ -126,16 +126,57 @@ export async function saveAstrology(profile: AstrologyProfile | null, userId?: s
   })
 }
 
-// ── Number Journal (per-user, localStorage only for now) ────────
+// ── Number Journal (per-user) ────────────────────────────────────
 export async function getJournal(userId?: string): Promise<JournalEntry[]> {
   const key = userId ? `lottomind_journal_${userId}` : 'lottomind_journal_anon'
-  const raw = localStorage.getItem(key)
-  return raw ? JSON.parse(raw) : []
+  if (!supabaseReady || !userId) {
+    const raw = localStorage.getItem(key)
+    return raw ? JSON.parse(raw) : []
+  }
+  const { data, error } = await supabase
+    .from('user_journal')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+  if (error || !data) {
+    const raw = localStorage.getItem(key)
+    return raw ? JSON.parse(raw) : []
+  }
+  return data.map(r => ({
+    id: r.id,
+    drawDate: r.draw_date,
+    numbers: r.numbers,
+    note: r.note ?? undefined,
+    checkedResult: r.checked_result ?? false,
+    hitPrize: r.hit_prize ?? undefined,
+    createdAt: r.created_at,
+  }))
 }
 
 export async function saveJournal(entries: JournalEntry[], userId?: string): Promise<void> {
   const key = userId ? `lottomind_journal_${userId}` : 'lottomind_journal_anon'
+  // เก็บ localStorage เป็น cache เสมอ
   localStorage.setItem(key, JSON.stringify(entries))
+  if (!supabaseReady || !userId) return
+
+  if (entries.length === 0) {
+    await supabase.from('user_journal').delete().eq('user_id', userId)
+    return
+  }
+  await supabase.from('user_journal').upsert(
+    entries.map(e => ({
+      id: e.id,
+      user_id: userId,
+      draw_date: e.drawDate,
+      numbers: e.numbers,
+      note: e.note ?? null,
+      checked_result: e.checkedResult ?? false,
+      hit_prize: e.hitPrize ?? null,
+      created_at: e.createdAt,
+      updated_at: new Date().toISOString(),
+    })),
+    { onConflict: 'id' }
+  )
 }
 
 // ── Subscription status ─────────────────────────────────────────
@@ -145,32 +186,54 @@ export async function getSubscription(userId: string) {
     .from('subscriptions')
     .select('*')
     .eq('user_id', userId)
-    .single()
+    .maybeSingle()
   return data
 }
 
 // ── Admin: all users + subscriptions ───────────────────────────
+// profiles.id และ subscriptions.user_id ต่างก็อ้างถึง auth.users(id)
+// ไม่มี FK ตรงถึงกัน → PostgREST embed ไม่ได้ → ทำ 2 query แยกแล้ว merge
 export async function adminGetUsers() {
-  const { data } = await supabase
+  const { data: profiles } = await supabase
     .from('profiles')
-    .select(`
-      id, username, avatar_color, is_admin, created_at,
-      subscriptions (status, started_at, expires_at)
-    `)
+    .select('id, username, avatar_color, is_admin, created_at')
     .order('created_at', { ascending: false })
-  return data ?? []
+  if (!profiles?.length) return []
+
+  const { data: subs } = await supabase
+    .from('subscriptions')
+    .select('user_id, status, started_at, expires_at')
+    .in('user_id', profiles.map(p => p.id))
+
+  const subMap = new Map(subs?.map(s => [s.user_id, s]) ?? [])
+
+  return profiles.map(p => ({
+    ...p,
+    // AdminPanel ใช้ subscriptions[0] จึง wrap เป็น array
+    subscriptions: subMap.has(p.id) ? [subMap.get(p.id)!] : [],
+  }))
 }
 
 export async function adminGetPayments() {
-  const { data } = await supabase
+  const { data: payments } = await supabase
     .from('payments')
-    .select(`
-      id, amount, currency, status, method, omise_charge_id, created_at,
-      profiles!payments_user_id_fkey (username)
-    `)
+    .select('id, user_id, amount, currency, status, method, omise_charge_id, created_at')
     .order('created_at', { ascending: false })
     .limit(200)
-  return data ?? []
+  if (!payments?.length) return []
+
+  // ดึง usernames แยก
+  const userIds = [...new Set(payments.filter(p => p.user_id).map(p => p.user_id))]
+  const { data: profiles } = userIds.length
+    ? await supabase.from('profiles').select('id, username').in('id', userIds)
+    : { data: [] }
+
+  const profMap = new Map(profiles?.map(p => [p.id, { username: p.username }]) ?? [])
+
+  return payments.map(p => ({
+    ...p,
+    profiles: p.user_id ? (profMap.get(p.user_id) ?? null) : null,
+  }))
 }
 
 export async function adminSetPremium(userId: string, days: number) {

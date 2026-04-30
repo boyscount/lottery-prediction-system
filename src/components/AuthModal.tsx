@@ -25,18 +25,26 @@ export default function AuthModal({ onSuccess, onClose, defaultMode = 'login' }:
     e.preventDefault()
     setError('')
     setLoading(true)
+
+    // timeout 15s — ป้องกันค้างหน้าจอถ้า Supabase ตอบช้า
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('ระบบใช้เวลานานเกินไป กรุณาลองใหม่')), 15000)
+    )
+
     try {
       if (mode === 'register') {
         if (password !== confirm) { setError('รหัสผ่านไม่ตรงกัน'); setLoading(false); return }
-        const res = await registerUser(username, email, password)
+        const res = await Promise.race([registerUser(username, email, password), timeout])
         if (res.success && res.session) { onSuccess(res.session); return }
         setError(res.error || 'เกิดข้อผิดพลาด')
       } else {
-        const res = await loginUser(email, password)
+        const res = await Promise.race([loginUser(email, password), timeout])
         if (res.success && res.session) { onSuccess(res.session); return }
         setError(res.error || 'เกิดข้อผิดพลาด')
       }
-    } catch { setError('เกิดข้อผิดพลาด กรุณาลองใหม่') }
+    } catch (err: any) {
+      setError(err?.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่')
+    }
     setLoading(false)
   }
 
@@ -147,12 +155,12 @@ export default function AuthModal({ onSuccess, onClose, defaultMode = 'login' }:
 
           <div>
             <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6 }}>
-              {mode === 'login' ? 'อีเมล หรือ ชื่อผู้ใช้' : 'อีเมล'}
+              {mode === 'login' ? 'อีเมล' : 'อีเมล'}
             </div>
             <input
               style={inp}
               type={mode === 'register' ? 'email' : 'text'}
-              placeholder={mode === 'login' ? 'อีเมล หรือ ชื่อผู้ใช้' : 'your@email.com'}
+              placeholder={mode === 'login' ? 'อีเมล' : 'your@email.com'}
               value={email}
               onChange={e => setEmail(e.target.value)}
               autoComplete="email"

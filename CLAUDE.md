@@ -3,7 +3,7 @@
 ระบบทำนายหวยไทยอัจฉริยะ ใช้สถิติ + ความฝัน + โหราศาสตร์ไทย + AI  
 **React SPA + Express backend** — Auth & DB ผ่าน Supabase, Payment ผ่าน Omise, AI ผ่าน Anthropic  
 Dev mode ไม่มี Supabase/Omise → fallback ทุกอย่างไปที่ `localStorage` อัตโนมัติ  
-**ทุก feature ใช้ฟรีทั้งหมด** — ไม่มี premium lock ใน production
+**AI features (Dream AI + Vision Scan) ต้องเป็นสมาชิก Premium เท่านั้น** — enforce ทั้ง frontend + backend
 
 ---
 
@@ -11,7 +11,7 @@ Dev mode ไม่มี Supabase/Omise → fallback ทุกอย่างไ
 
 ```bash
 # Frontend
-npm run dev      # http://localhost:3000 (หรือ port ถัดไป)
+npm run dev      # http://localhost:5173 (Vite default) หรือ port ถัดไป
 npm run build    # tsc + vite build → dist/
 npm run preview  # Preview production build
 
@@ -36,17 +36,18 @@ VITE_API_URL=http://localhost:4000
 ### Backend (`server/.env` — copy จาก `server/.env.example`)
 ```env
 SUPABASE_URL=https://xxxx.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=eyJ...   # ห้ามใส่ใน frontend เด็ดขาด
+SUPABASE_SERVICE_ROLE_KEY=eyJ...   # ห้ามใส่ใน frontend เด็ดขาด — bypass RLS ทั้งหมด
 OMISE_SECRET_KEY=skey_test_...
 OMISE_PUBLIC_KEY=pkey_test_...
 OMISE_WEBHOOK_SECRET=whsec_...
-ANTHROPIC_API_KEY=sk-ant-api03-...  # optional — AI Dream Interpreter + Vision Scanner
+ANTHROPIC_API_KEY=sk-ant-api03-... # ต้องมี credits — AI Dream + Vision Scanner
 PORT=4000
-FRONTEND_URL=http://localhost:3000
+FRONTEND_URL=http://localhost:3000  # ถ้า dev ใช้ port อื่น ต้องแก้ หรือ isDev=true bypass CORS
 NODE_ENV=development
 ```
 
-> **ถ้าไม่ตั้งค่า Supabase** — `supabaseReady = false` → app ทำงานด้วย localStorage ทั้งหมด (dev mode)
+> **ถ้าไม่ตั้งค่า Supabase** — `supabaseReady = false` → app ทำงานด้วย localStorage ทั้งหมด (dev mode)  
+> **ถ้าไม่มี ANTHROPIC_API_KEY** — AI endpoints คืน fallback random numbers แทนที่จะ crash
 
 ---
 
@@ -66,14 +67,14 @@ NODE_ENV=development
 | Fonts        | Sarabun (Thai) + Space Grotesk (numbers)   | Google   |
 
 ### Backend (`server/`)
-| Layer        | Library                                    |
-|--------------|--------------------------------------------|
-| Runtime      | Node.js (≥18) — native fetch built-in      |
-| Framework    | Express 4                                  |
-| Payment      | omise (official Node SDK)                  |
-| DB           | @supabase/supabase-js (service-role)       |
-| AI           | Anthropic API (claude-3-haiku) via fetch   |
-| Helpers      | cors, dotenv                               |
+| Layer        | Library                                    | Notes |
+|--------------|--------------------------------------------|-------|
+| Runtime      | Node.js (≥18) — native fetch built-in      | |
+| Framework    | Express 4                                  | |
+| Payment      | omise `^1.1.0`                             | ⚠️ ต้องใช้ v1.x ไม่ใช่ v2+ |
+| DB           | @supabase/supabase-js (service-role)       | bypass RLS |
+| AI           | Anthropic API (`claude-haiku-4-5-20251001`) via fetch | |
+| Helpers      | cors, dotenv                               | |
 
 ---
 
@@ -81,6 +82,7 @@ NODE_ENV=development
 
 ```
 .
+├── .env                        # Frontend env (ไม่ commit — gitignored)
 ├── .env.example                # Frontend env template
 ├── CLAUDE.md                   # ← ไฟล์นี้
 ├── index.html
@@ -89,9 +91,10 @@ NODE_ENV=development
 ├── tailwind.config.js
 │
 ├── server/                     # Express backend
+│   ├── .env                    # Backend env (ไม่ commit — gitignored)
 │   ├── .env.example
 │   ├── package.json
-│   └── index.js                # Payment API + webhook
+│   └── index.js                # Payment API + AI API + webhook + requirePremium middleware
 │
 ├── supabase/
 │   └── migrations/
@@ -107,7 +110,7 @@ NODE_ENV=development
     │   └── index.ts            # All TypeScript interfaces
     │
     ├── lib/
-    │   ├── supabase.ts         # Supabase client + supabaseReady flag
+    │   ├── supabase.ts         # Supabase client + supabaseReady flag + navigator lock bypass
     │   └── db.ts               # DB operations (Supabase ↔ localStorage fallback)
     │
     ├── data/
@@ -115,7 +118,8 @@ NODE_ENV=development
     │   └── dreamDatabase.ts    # 60+ dream entries
     │
     ├── utils/
-    │   ├── auth.ts             # Auth: Supabase + localStorage fallback, rate limit
+    │   ├── auth.ts             # Auth: Supabase + localStorage fallback, rate limit, isPremium
+    │   ├── aiRateLimit.ts      # (superseded) rate limit helper — ปัจจุบัน premium-only แทน
     │   ├── prediction.ts       # Weighted prediction engine
     │   ├── statistics.ts       # Frequency, position, overdue, sum analysis
     │   └── astrology.ts        # Thai zodiac, elements, lunar phase
@@ -129,9 +133,9 @@ NODE_ENV=development
         ├── PaywallOverlay.tsx  # Blur + lock overlay
         ├── Dashboard.tsx       # Live countdown, latest result, hot/cold balls, community trending
         ├── Predictor.tsx       # ทำนายเลข 2/3/6 ตัว (slot machine loader + particle burst)
-        ├── DreamInterpreter.tsx   # ฝันแล้วได้เลข (browse mode + AI mode)
-        ├── NumberScanner.tsx   # 📷 สแกนเลขด้วย AI (camera/upload → Vision AI)
-        ├── NumberJournal.tsx   # บันทึกเลข + ติดตามผล
+        ├── DreamInterpreter.tsx   # ฝันแล้วได้เลข (browse mode + AI mode — AI ต้อง Premium)
+        ├── NumberScanner.tsx   # 📷 สแกนเลขด้วย AI (ต้อง Premium — camera/upload → Vision AI)
+        ├── NumberJournal.tsx   # บันทึกเลข + ติดตามผล (sync Supabase เมื่อ login)
         ├── Statistics.tsx      # สถิติ + Heatmap (advanced = PREMIUM)
         ├── AstrologyPanel.tsx  # โหราศาสตร์ไทย + ดวงประจำเดือน + draw strength
         └── HistoryManager.tsx  # ประวัติการออกรางวัล
@@ -150,17 +154,78 @@ NODE_ENV=development
 | `lottery_draws`  | ผลรางวัล (shared ทุก user)                    |
 | `user_dreams`    | DreamSelection per user                      |
 | `user_astrology` | AstrologyProfile per user (JSONB)            |
+| `user_journal`   | JournalEntry per user (sync เมื่อ login)      |
 
 ### RLS Policies (สำคัญ)
 - Users อ่าน/เขียนได้เฉพาะแถวของตัวเอง (`auth.uid() = user_id`)
 - `lottery_draws` — ทุกคนอ่านได้, แก้ไขได้เฉพาะ `is_admin = TRUE`
+- `user_journal` — `FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id)`
 - Service Role Key (backend เท่านั้น) — bypass RLS ทั้งหมด
 
 ### Triggers
 - `on_auth_user_created` → auto-insert profile + free subscription เมื่อ user สมัคร
 - `subscription_expiry_check` → auto-set `status = 'expired'` เมื่อ `expires_at < NOW()`
 
-> **Setup**: วาง `supabase/migrations/001_schema.sql` ทั้งหมดใน Supabase Dashboard → SQL Editor แล้วกด Run
+### Setup ใน Supabase Dashboard
+1. ไปที่ **SQL Editor**
+2. วาง `supabase/migrations/001_schema.sql` ทั้งหมด แล้วกด **Run**
+3. ไปที่ **Authentication → Settings** → ปิด "Confirm email" (สำหรับ dev)
+4. สร้าง admin user: ตั้ง `is_admin = TRUE` ใน `profiles` table โดยตรง
+
+---
+
+## Premium Security System (2 Layers)
+
+AI features (Dream AI + Vision Scan) ถูก protect ด้วย 2 ชั้น:
+
+### Layer 1 — Frontend UX Gate (`NumberScanner.tsx`, `DreamInterpreter.tsx`)
+```
+ไม่ได้ login → แสดง "กรุณาเข้าสู่ระบบ" + ปุ่ม login/register
+login แต่ไม่ premium → แสดง "สำหรับสมาชิก Premium" + ปุ่ม upgrade
+premium → แสดง UI เต็ม + ส่ง Bearer token กับทุก request
+```
+
+### Layer 2 — Backend Enforcement (`requirePremium` middleware)
+```javascript
+// server/index.js
+async function requirePremium(req, res, next) {
+  if (!supabaseReady) return next()  // dev mode: ข้ามการตรวจสอบ
+
+  const auth = req.headers.authorization
+  if (!auth?.startsWith('Bearer '))
+    return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ', code: 'REQUIRE_LOGIN' })
+
+  const token = auth.slice(7)
+  const { data: { user }, error } = await supabase.auth.getUser(token)
+  if (error || !user)
+    return res.status(401).json({ error: 'Session หมดอายุ', code: 'INVALID_TOKEN' })
+
+  const { data: sub } = await supabase
+    .from('subscriptions')
+    .select('status, expires_at')
+    .eq('user_id', user.id)
+    .single()
+
+  const isPremium = sub?.status === 'premium' &&
+    (!sub.expires_at || new Date(sub.expires_at) > new Date())
+
+  if (!isPremium)
+    return res.status(403).json({ error: 'ฟีเจอร์นี้สำหรับสมาชิก Premium เท่านั้น', code: 'REQUIRE_PREMIUM' })
+
+  req.user = user
+  next()
+}
+
+// Applied to AI endpoints:
+app.post('/api/ai/dream', requirePremium, ...)
+app.post('/api/ai/scan',  requirePremium, ...)
+```
+
+### Error Handling ใน Frontend
+```typescript
+if (res.status === 401) → prompt login
+if (res.status === 403) → prompt upgrade to premium
+```
 
 ---
 
@@ -174,25 +239,28 @@ NODE_ENV=development
 | login | `supabase.auth.signInWithPassword` | ตรวจ hash |
 | session | Supabase JWT → `buildUserSession()` | parse JSON |
 | data | Supabase tables | `lottomind_*` keys |
+| `session.token` | Supabase JWT (access_token จริง) | random hex token |
 
 ### localStorage Keys (dev mode / fallback)
 | Key | เก็บอะไร |
 |-----|---------|
 | `lottomind_auth` | Supabase session (ถ้า supabaseReady) |
-| `lottomind_users` | `UserProfile[]` (localStorage mode) |
-| `lottomind_session` | `UserSession` (localStorage mode) |
+| `lottomind_users` | `UserProfile[]` (localStorage mode only) |
+| `lottomind_session` | `UserSession` cache |
 | `lottomind_draws` | `LotteryDraw[]` |
 | `lottomind_dreams_{userId}` | `DreamSelection[]` |
 | `lottomind_astro_{userId}` | `AstrologyProfile` |
-| `lottomind_rate` | `{date, count}` — rate limit |
+| `lottomind_journal_{userId}` | `JournalEntry[]` (cache — Supabase is source of truth) |
+| `lottomind_rate` | `{date, count}` — rate limit (3/day free users) |
 
 ### Key Functions
 ```typescript
 registerUser(username, email, password)  // async → { success, session?, error? }
-loginUser(credential, password)          // email หรือ username (localStorage mode เท่านั้น)
-logoutUser()                             // supabase.auth.signOut + clearSessionLocal
+loginUser(email, password)               // Supabase mode: email only (username ไม่รองรับ)
+logoutUser()                             // scope:'local' signOut + clearSessionLocal
 activatePremium(session)                 // async → UserSession (updates DB or localStorage)
-buildUserSession(supabaseUser, sub?)     // map Supabase user → UserSession
+buildUserSession(supabaseUser, sub?, accessToken?)  // map Supabase user → UserSession
+                                         // ⚠️ ต้องส่ง accessToken เพื่อให้ session.token = JWT จริง
 getSession()                             // sync read localStorage (for initial state)
 getSessionAsync()                        // async — ตรวจ Supabase session ด้วย
 isPremium(session)                       // boolean — status==='premium' && expiresAt > now
@@ -200,11 +268,41 @@ checkRateLimit()                         // { allowed, remaining } (3/day free u
 incrementRateLimit()                     // บวก counter
 ```
 
+### Critical: Token Must Be Real Supabase JWT
+```typescript
+// ✅ CORRECT — ส่ง access_token จาก Supabase session
+const session = await buildUserSession(data.user, null, data.session?.access_token)
+
+// ❌ WRONG — generateToken() สร้าง random hex ไม่ใช่ JWT — backend จะปฏิเสธ
+```
+
+### Navigator Lock Bypass (`src/lib/supabase.ts`)
+```typescript
+export const supabase = createClient(url || 'https://placeholder.supabase.co', key || 'placeholder', {
+  auth: {
+    persistSession: true,
+    storageKey: 'lottomind_auth',
+    autoRefreshToken: true,
+    // ป้องกัน NavigatorLockAcquireTimeoutError
+    lock: <R>(_name: string, _timeout: number, fn: () => Promise<R>): Promise<R> => fn(),
+  },
+})
+```
+
+### Logout Must Use `scope: 'local'`
+```typescript
+// ✅ CORRECT — ป้องกัน lock contention บน logout
+await supabase.auth.signOut({ scope: 'local' })
+
+// ❌ WRONG — default scope ทำให้ NavigatorLockAcquireTimeoutError
+await supabase.auth.signOut()
+```
+
 ### Security Notes
-- Password hash: `SHA-256(password + SALT)` via Web Crypto API — client-side เท่านั้น
+- Password hash: `SHA-256(password + SALT)` via Web Crypto API — localStorage mode เท่านั้น
 - Supabase mode: password จัดการโดย Supabase Auth (bcrypt) — ปลอดภัยกว่า
 - Input sanitization: strip `<>"'&`, validate regex ก่อนทุก operation
-- Rate limit: 3 predictions/day สำหรับ free user
+- Rate limit: 3 predictions/day สำหรับ free user (frontend only — Predictor component)
 
 ---
 
@@ -212,17 +310,30 @@ incrementRateLimit()                     // บวก counter
 
 ทุก function รองรับทั้ง Supabase และ localStorage:
 
+### getDraws() — Merge Strategy (สำคัญ)
+localStorage mode จะ **merge** ข้อมูลแทน replace เพื่อป้องกัน stale cache ทับ real data:
+```typescript
+// lotteryHistory (hardcoded) เป็น source of truth เสมอ
+// User-added draws (ที่ admin เพิ่มเอง) จะถูก preserve
+const historyIds = new Set(lotteryHistory.map(d => d.id))
+const userAdded  = stored.filter(d => !historyIds.has(d.id))
+return [...lotteryHistory, ...userAdded].sort(...)
+```
+> ถ้าไม่ทำ merge: user ที่มี cached draws เก่าใน localStorage จะไม่เห็น real draws ใหม่
+
 ```typescript
 // Draws (shared)
 getDraws()                          // → LotteryDraw[]
 saveDraws(draws)                    // upsert
 deleteDraw(id)                      // Supabase เท่านั้น
 
-// Per-user data
+// Per-user data (Supabase when logged in, localStorage fallback)
 getDreams(userId?)                  // → DreamSelection[]
 saveDreams(dreams, userId?)
 getAstrology(userId?)               // → AstrologyProfile | null
 saveAstrology(profile, userId?)
+getJournal(userId?)                 // → JournalEntry[] (localStorage as cache)
+saveJournal(entries, userId?)       // localStorage เสมอ + Supabase upsert ถ้า login
 
 // Subscription
 getSubscription(userId)             // Supabase เท่านั้น
@@ -234,6 +345,14 @@ adminSetPremium(userId, days)       // upsert subscription
 adminRevokeSubscription(userId)     // set status='free'
 ```
 
+### saveJournal — Dual Write Strategy
+```typescript
+// เก็บ localStorage เสมอ (ใช้เป็น cache + offline support)
+localStorage.setItem(key, JSON.stringify(entries))
+// Supabase upsert เมื่อ supabaseReady && userId
+await supabase.from('user_journal').upsert(rows, { onConflict: 'id' })
+```
+
 ---
 
 ## Payment Flow (`server/index.js`)
@@ -241,7 +360,8 @@ adminRevokeSubscription(userId)     // set status='free'
 ### Card Payment
 ```
 Frontend → Omise.js tokenize card → POST /api/payment/charge { token }
-Backend → omise.charges.create({ card: token, amount: 5900 })
+Backend → verify Bearer JWT (requireAuth)
+        → omise.charges.create({ card: token, amount: 5900 })
         → if succeeded → activatePremium(userId) in DB
         → return { success, chargeId }
 ```
@@ -269,9 +389,12 @@ Backend → verify HMAC-SHA256 signature
 | `POST` | `/api/payment/promptpay` | Bearer JWT | PromptPay QR |
 | `GET`  | `/api/payment/status/:id` | Bearer JWT | Poll charge status |
 | `POST` | `/api/payment/webhook` | HMAC signature | Omise webhook |
-| `POST` | `/api/ai/dream` | — (public) | AI Dream Interpreter |
-| `POST` | `/api/ai/scan` | — (public) | Vision AI number scanner |
+| `POST` | `/api/ai/dream` | **Bearer JWT + Premium** | AI Dream Interpreter |
+| `POST` | `/api/ai/scan`  | **Bearer JWT + Premium** | Vision AI number scanner |
 | `GET`  | `/health` | — | Health check |
+
+> ⚠️ AI endpoints **ต้องมี Premium subscription** — ถ้าไม่มี backend คืน 403 REQUIRE_PREMIUM  
+> Dev mode (`supabaseReady=false`): `requirePremium` ข้ามการตรวจสอบทั้งหมด
 
 ---
 
@@ -293,7 +416,8 @@ ExtendedTabType    // TabType | 'journal' | 'scanner' | 'admin'  (defined locall
 SubscriptionStatus // 'free' | 'premium' | 'expired'
 
 UserSession {
-  userId, username, email, token
+  userId, username, email
+  token              // Supabase JWT (access_token) ใน Supabase mode — ใช้เป็น Bearer token
   createdAt, expiresAt         // token expiry (30 วัน)
   avatarColor                  // hex color
   isAdmin?: boolean
@@ -318,9 +442,11 @@ JournalEntry       // id, drawDate, numbers[{type,value}], note?, checkedResult?
 
 ## AI Features (`server/index.js`)
 
+> ⚠️ ทั้งสอง endpoint ต้องผ่าน `requirePremium` middleware ก่อนเสมอ
+
 ### AI Dream Interpreter (`POST /api/ai/dream`)
 ```typescript
-// Request
+// Request (+ Header: Authorization: Bearer <JWT>)
 { dreamText: string }  // Thai natural language, max 1000 chars
 
 // Response
@@ -334,14 +460,15 @@ JournalEntry       // id, drawDate, numbers[{type,value}], note?, checkedResult?
   isFallback?: boolean     // true ถ้าไม่มี API key
 }
 ```
-- ใช้ claude-3-haiku-20240307 (เร็ว ราคาถูก)
+- ใช้ `claude-haiku-4-5-20251001` (เร็ว ราคาถูก)
 - **Fallback mode**: ถ้าไม่มี `ANTHROPIC_API_KEY` → คืน random numbers (ไม่ crash)
-- Frontend: `DreamInterpreter.tsx` → mode toggle `browse` / `ai`
+- Frontend: `DreamInterpreter.tsx` → mode toggle `browse` / `ai` (ai tab แสดง paywall ถ้าไม่ premium)
 
 ### Vision AI Scanner (`POST /api/ai/scan`)
 ```typescript
-// Request
-{ imageBase64: string, mimeType?: string }  // base64 image (max 5 MB)
+// Request (+ Header: Authorization: Bearer <JWT>)
+{ imageBase64: string, mimeType?: string }  // base64 image, ขนาดสูงสุด ~5 MB
+// ⚠️ express.json({ limit: '10mb' }) ต้องตั้งค่าใน server ไม่งั้น HTTP 413
 
 // Response
 {
@@ -352,12 +479,22 @@ JournalEntry       // id, drawDate, numbers[{type,value}], note?, checkedResult?
 }
 ```
 - ใช้ Claude Vision API (image + text input)
-- Frontend: `NumberScanner.tsx` → drag-drop / gallery / camera capture
+- Frontend: `NumberScanner.tsx` — 3 states: login wall → upgrade wall → scanner UI
 - ตัวอย่าง input: สลาก, ป้ายทะเบียน, บ้านเลขที่, ปฏิทิน
 
 ### Shared helper
 ```javascript
-callClaude(messages, systemPrompt, maxTokens)  // wrapper around Anthropic API
+callClaude(messages, systemPrompt, maxTokens)  // wrapper around Anthropic fetch API
+```
+
+### Anthropic Model Version
+```javascript
+// ✅ ใช้ model นี้ (verified working, April 2026)
+model: 'claude-haiku-4-5-20251001'
+
+// ❌ deprecated — จะได้ 404
+// 'claude-3-haiku-20240307'
+// 'claude-3-5-haiku-20241022'
 ```
 
 ---
@@ -374,20 +511,56 @@ callClaude(messages, systemPrompt, maxTokens)  // wrapper around Anthropic API
 
 ## New UI Features
 
-### Dashboard
-- Live countdown (วินาที) พร้อม animation
+### Dashboard — Draw-Day Phase Machine (6 states)
+
+Dashboard hero section เปลี่ยน UI ตาม state ของวันหวยออก คำนวณจากเวลาไทย (UTC+7) เสมอ
+
+#### Thailand Time Helpers (`Dashboard.tsx`)
+```typescript
+getThaiNow(): Date              // UTC+7 — ทำงานถูกต้องทุก timezone ของ user
+getTodayThaiISO(): string       // "YYYY-MM-DD" ของวันนี้ตามเวลาไทย
+getThaiHourMinute(): { h, m }   // ชั่วโมง/นาที ตามเวลาไทย
+isDrawDateISO(iso): boolean     // true ถ้า day = 1,2,16,17 (หวยออกวันนั้น)
+addDaysISO(iso, n): string      // บวกวันแบบ safe ไม่มี timezone drift
+thaiDate(iso): string           // "2026-04-16" → "16 เม.ย. 2569" (พ.ศ.)
+```
+
+#### DrawDayPhase State Machine
+```typescript
+type DrawDayPhase = 'normal' | 'today-eve' | 'today-pre' | 'today-live' | 'today-wait' | 'today-done'
+```
+
+| Phase | เงื่อนไข (เวลาไทย) | Hero UI |
+|---|---|---|
+| `normal` | ไม่ใช่วันหวยออก และพรุ่งนี้ก็ไม่ใช่ | Countdown ม่วง `.gb-animated` ปกติ |
+| `today-eve` | พรุ่งนี้หวยออก (`isDrawDateISO(tomorrow)`) | 🎰 Ribbon gradient "หวยออกพรุ่งนี้!" + countdown urgent |
+| `today-pre` | วันหวยออก ก่อน 14:00 Thai | 🎰 Banner ทอง "วันนี้หวยออก!" + countdown ถึง 15:00 + 2 CTA |
+| `today-live` | วันหวยออก 14:00–15:30 Thai | 🔴 LIVE pulsing dot + "กำลังออกรางวัล!" + refresh button |
+| `today-wait` | วันหวยออก หลัง 15:30 Thai แต่ยังไม่มีผลในข้อมูล | ⏳ "รอผลล่าสุด..." + refresh button |
+| `today-done` | วันหวยออก และ latestDraw.date === todayISO | 🎉 การ์ดเขียว "ผลออกแล้ว!" โชว์รางวัลทุกประเภทใน hero |
+
+`useDrawDayPhase()` hook ใช้ `setInterval(calc, 10000)` — อัปเดตทุก 10 วินาที
+
+#### Latest Result Section
+- Gold ribbon header แสดง "ผลหวยงวด {thaiDate(date)}"
+- รางวัลที่ 1 ขนาดใหญ่ (`.prize-display` + `.digit-slot`)
+- 3 คอลัมน์: เลขท้าย 3 ตัวหน้า / เลขท้าย 3 ตัวหลัง / เลขท้าย 2 ตัว
+- Timeline 3 งวดล่าสุดด้านล่าง พร้อมปุ่ม "ดูทั้งหมด →" ลิงก์ไปหน้า history
 - Community trending numbers (top 8 จาก stats + flavor text)
 - Animated gradient border (`.gb-animated`) บน hero card
 
 ### DreamInterpreter
-- **Browse mode**: เลือกจากฐานข้อมูล 60+ รายการ + Dream Combo analyzer
-- **AI mode**: พิมพ์ภาษาไทย → AI วิเคราะห์ → keywords + เลขมงคล
+- **Browse mode**: เลือกจากฐานข้อมูล 60+ รายการ + Dream Combo analyzer (ฟรีทุกคน)
+- **AI mode**: พิมพ์ภาษาไทย → AI วิเคราะห์ → keywords + เลขมงคล **(Premium เท่านั้น)**
+  - ไม่ login → แสดง login wall
+  - login แต่ไม่ premium → แสดง upgrade wall
+  - premium → พิมพ์ + ส่ง Bearer token
 
-### NumberScanner (tab: `scanner`)
-- Drag-drop หรือ click อัปโหลด
-- ถ่ายรูปผ่าน camera (mobile)
-- Preview ภาพก่อนวิเคราะห์
-- แสดงตัวเลขทั้งหมดที่พบ + เลขมงคลแนะนำ
+### NumberScanner (tab: `scanner`) — **Premium เท่านั้น**
+- State 1 (ไม่ login): login/register wall พร้อม feature list
+- State 2 (login, ไม่ premium): upgrade wall พร้อมราคา 59 ฿/เดือน
+- State 3 (premium): drag-drop / click upload + camera capture (mobile)
+- Preview ภาพก่อนวิเคราะห์ + ส่ง `Authorization: Bearer ${session.token}`
 
 ### Statistics
 - Heatmap view (10×10 grid 00-99) แสดงความถี่ด้วยสี
@@ -402,6 +575,7 @@ callClaude(messages, systemPrompt, maxTokens)  // wrapper around Anthropic API
 ### NumberJournal (tab: `journal`)
 - บันทึกเลขที่จะซื้อ พร้อม draw date
 - Auto-detect ว่าถูกรางวัลหรือไม่
+- **Sync กับ Supabase** เมื่อ login — ข้อมูลไม่หายเมื่อเปลี่ยนอุปกรณ์
 
 ---
 
@@ -414,10 +588,16 @@ callClaude(messages, systemPrompt, maxTokens)  // wrapper around Anthropic API
 | ดูฐานข้อมูลความฝัน (browse) | ✅ | ✅ |
 | สถิติ — ความถี่ 2 ตัว | ✅ | ✅ |
 | โหราศาสตร์ไทย (zodiac + element) | ✅ | ✅ |
+| บันทึกเลข (Journal) | ✅ | ✅ |
 | สถิติขั้นสูง (ตำแหน่ง/ค้าง/ผลรวม) | 💎 | ✅ |
 | เลขจากความฝัน (result numbers) | 💎 | ✅ |
 | **ทำนายเลข 2/3/6 ตัว** | 🔒 | ✅ |
 | ดวงประจำเดือน + เลขมงคล | 🔒 | ✅ |
+| **ตีความฝัน AI** | 🔒 | ✅ |
+| **สแกนเลขด้วย AI (Vision)** | 🔒 | ✅ |
+
+> 🔒 = ต้อง Premium, enforce ทั้ง frontend + backend middleware  
+> 💎 = frontend paywall เท่านั้น (ไม่มี backend enforce)
 
 ---
 
@@ -480,6 +660,16 @@ Output: `twoDigit[]` 8 ตัว · `threeDigit[]` 6 ตัว · `sixDigit[]` 3
 | `.cta-ring::after` | expanding ring pulse |
 | `.ripple-dot` | JS tap ripple |
 
+**Animations (keyframes)**
+```css
+@keyframes pulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(1.6); }
+}
+/* ใช้กับ LIVE dot ใน Dashboard today-live phase */
+/* style={{ animation: 'pulse 1s ease-in-out infinite' }} */
+```
+
 **Auth / Nav UI**  
 `.modal-backdrop` · `.user-avatar` · `.user-dropdown` / `.user-dropdown-item` · `.badge-premium`  
 `.bottom-nav` · `.bnav-item.on` · `.top-nav`
@@ -499,7 +689,8 @@ Output: `twoDigit[]` 8 ตัว · `threeDigit[]` 6 ตัว · `sixDigit[]` 3
 { draws, dreamSelections, astrologyProfile, session, onNavigateDream, onNavigateAstrology, onShowAuth, onShowSubscription }
 
 // DreamInterpreter.tsx
-{ selected, onSelectionChange, isPremium, onShowAuth, onShowSubscription }
+{ selected, onSelectionChange, isPremium, onShowAuth, onShowSubscription, session }
+// ⚠️ session prop ใหม่ — ต้องส่งจาก App.tsx เพื่อให้ AI mode ทำงานได้
 
 // Statistics.tsx
 { draws, isPremium, onShowSubscription }
@@ -521,6 +712,10 @@ Output: `twoDigit[]` 8 ตัว · `threeDigit[]` 6 ตัว · `sixDigit[]` 3
 
 // PaywallOverlay.tsx
 { session, children, feature?, onLogin, onUpgrade }
+
+// NumberScanner.tsx
+{ session?: UserSession, onShowAuth?: () => void, onShowSubscription?: () => void }
+// ⚠️ 3 UI states based on session + premium status
 
 // Logo.tsx
 { size?, className?, style? }
@@ -579,14 +774,30 @@ const premium = isPremium(session)
 if (!premium) return <PaywallOverlay onLogin={onShowAuth} onUpgrade={onShowSubscription} />
 ```
 
-### Call backend API with Supabase auth token
+### Call AI endpoint with Bearer token
 ```typescript
-const { data: { session } } = await supabase.auth.getSession()
+// session.token คือ Supabase JWT จริง — backend ตรวจสอบ + verify premium
+const res = await fetch(`${import.meta.env.VITE_API_URL}/api/ai/dream`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${session.token}`,
+  },
+  body: JSON.stringify({ dreamText }),
+})
+
+if (res.status === 401) { /* prompt login */ }
+if (res.status === 403) { /* prompt upgrade */ }
+```
+
+### Call payment endpoint with Supabase auth token
+```typescript
+const { data: { session: supaSession } } = await supabase.auth.getSession()
 const res = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/charge`, {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${session?.access_token}`,
+    'Authorization': `Bearer ${supaSession?.access_token}`,
   },
   body: JSON.stringify({ token: omiseToken }),
 })
@@ -613,21 +824,39 @@ const res = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/charge`, {
 
 - [ ] ตั้งค่า `.env` (frontend) และ `server/.env` (backend) ด้วยค่าจริง
 - [ ] รัน `001_schema.sql` ใน Supabase SQL Editor
+- [ ] ปิด email confirmation ใน Supabase Auth Settings (หรือ configure email provider)
 - [ ] ติดตั้ง Omise.js ใน `index.html` สำหรับ card tokenization  
       `<script src="https://cdn.omise.co/omise.js"></script>`
 - [ ] ตั้ง Omise Webhook URL → `https://your-domain/api/payment/webhook`
-- [ ] ตั้งค่า `ANTHROPIC_API_KEY` ใน backend env (optional แต่แนะนำสำหรับ AI features)
+- [ ] ตั้งค่า `ANTHROPIC_API_KEY` ใน backend env — **ต้องมี credits ใน Anthropic account**
 - [ ] Deploy backend (Railway / Render / Fly.io) — ต้องใช้ HTTPS
-- [ ] Set `FRONTEND_URL` ใน backend env เป็น production domain
+- [ ] Set `FRONTEND_URL` ใน backend env เป็น production domain (กำหนด CORS)
 - [ ] Set `VITE_API_URL` ใน frontend env เป็น backend URL จริง
 - [ ] สร้าง admin user: ตั้ง `is_admin = TRUE` ใน `profiles` table โดยตรง
+- [ ] ตรวจสอบ `express.json({ limit: '10mb' })` ใน server/index.js (สำหรับ Vision AI)
 
 ---
 
-## Notes & Known Warnings
+## Notes & Known Issues (Resolved)
 
 - **CSS build warning** — `@import` Google Fonts อยู่หลัง `@tailwind` → cosmetic เท่านั้น ไม่กระทบ build
 - **Chunk size warning** — 865 kB มาจาก Recharts → lazy load ได้ถ้าต้องการ
 - **Username login** — Supabase mode รองรับแค่ email login (username → error message ให้ใช้ email)
 - **localStorage mode** — ข้อมูลหายเมื่อล้าง browser cache, ไม่มีการ sync ข้ามอุปกรณ์
 - **PDPA** — ควรมี Privacy Policy และปุ่ม "ลบบัญชี" สำหรับ production จริง
+- **Draw-day detection** — ใช้ `isDrawDateISO()` เทียบกับ `todayISO` โดยตรง ไม่ใช่เทียบกับ `getNextDrawDate()` เพราะ `getNextDrawDate()` คืนค่างวด **ถัดไป** เสมอ (ไม่ใช่วันนี้) แม้วันนี้จะเป็นวันหวยออกก็ตาม
+- **2024-10-16 data** — เลขหน้า 3 ตัวเป็น approximation (รางวัลที่ 1: 482962, เลขท้าย 2 ตัว: 00 ตรวจสอบแล้ว)
+
+### Auth Bugs Fixed (เอกสารประวัติ)
+| Bug | สาเหตุ | วิธีแก้ |
+|-----|--------|---------|
+| Login ไม่ได้ "ไม่พบบัญชีผู้ใช้" | Supabase email confirmation เปิดอยู่ | ปิดใน Auth Settings + รัน SQL confirm email |
+| Logout ไม่ได้ | `signOut()` ไม่ระบุ scope → lock contention | `signOut({ scope: 'local' })` |
+| NavigatorLockAcquireTimeoutError | Supabase ใช้ navigator.locks → race condition | lock bypass ใน createClient config |
+| session.token ไม่ใช่ JWT จริง | `buildUserSession` สร้าง random token | เพิ่ม `accessToken?` param + ส่งจาก caller |
+| isPremium() always true | hardcode `return true` | แก้ให้ตรวจ subscription.status จริง |
+| HTTP 413 on image upload | express.json limit 100kb | `express.json({ limit: '10mb' })` |
+| CORS error | FRONTEND_URL ไม่ตรงกับ Vite port | dev mode allow all origins |
+| AI 404 model not found | deprecated claude-3-haiku-20240307 | เปลี่ยนเป็น claude-haiku-4-5-20251001 |
+| omise npm install fail | package version `^2.6.0` ไม่มี | เปลี่ยนเป็น `^1.1.0` |
+| OTP expired URL hash | เปิด email link เก่า | useEffect ล้าง error hash จาก URL |

@@ -1,4 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react'
+import { UserSession } from '../types'
+import { isPremium } from '../utils/auth'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
@@ -9,7 +11,13 @@ interface ScanResult {
   confidence: number
 }
 
-export default function NumberScanner() {
+interface Props {
+  session?: UserSession | null
+  onShowAuth?: () => void
+  onShowSubscription?: () => void
+}
+
+export default function NumberScanner({ session, onShowAuth, onShowSubscription }: Props) {
   const [preview, setPreview]       = useState<string | null>(null)
   const [loading, setLoading]       = useState(false)
   const [result, setResult]         = useState<ScanResult | null>(null)
@@ -17,6 +25,8 @@ export default function NumberScanner() {
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef                = useRef<HTMLInputElement>(null)
   const cameraInputRef              = useRef<HTMLInputElement>(null)
+
+  const userIsPremium = isPremium(session ?? null)
 
   const processFile = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -40,17 +50,23 @@ export default function NumberScanner() {
     const base64Reader = new FileReader()
     base64Reader.onload = async (e) => {
       const dataUrl = e.target?.result as string
-      // Remove the "data:image/jpeg;base64," prefix
-      const base64 = dataUrl.split(',')[1]
+      const base64  = dataUrl.split(',')[1]
       const mimeType = file.type
 
       setLoading(true)
       try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        // ส่ง Bearer token เสมอถ้า login อยู่ — backend verify premium
+        if (session?.token) headers['Authorization'] = `Bearer ${session.token}`
+
         const res = await fetch(`${API_URL}/api/ai/scan`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ imageBase64: base64, mimeType }),
         })
+
+        if (res.status === 401) { setError('กรุณาเข้าสู่ระบบก่อนใช้ฟีเจอร์นี้'); return }
+        if (res.status === 403) { setError('ฟีเจอร์นี้สำหรับสมาชิก Premium เท่านั้น'); return }
         if (!res.ok) throw new Error(`Server error ${res.status}`)
         const data = await res.json()
         if (data.error) throw new Error(data.error)
@@ -62,7 +78,7 @@ export default function NumberScanner() {
       }
     }
     base64Reader.readAsDataURL(file)
-  }, [])
+  }, [session])
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -84,14 +100,92 @@ export default function NumberScanner() {
     if (cameraInputRef.current) cameraInputRef.current.value = ''
   }
 
+  // ── Paywall: ไม่ได้ login ─────────────────────────────────────
+  if (!session) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 4 }}>📷 สแกนเลขด้วย AI</h2>
+          <p style={{ fontSize: 13, color: '#64748b' }}>ถ่ายหรืออัปโหลดภาพที่มีตัวเลข → AI วิเคราะห์และแนะนำเลขมงคล</p>
+        </div>
+        <div className="glass spring-in" style={{
+          borderRadius: 20, padding: 36, textAlign: 'center',
+          border: '1px solid rgba(124,58,237,0.3)',
+        }}>
+          <div style={{ fontSize: 52, marginBottom: 14 }}>📷</div>
+          <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 17, marginBottom: 8 }}>
+            สแกนเลขด้วย AI
+          </div>
+          <div style={{ fontSize: 13, color: '#64748b', marginBottom: 24, lineHeight: 1.7 }}>
+            อัปโหลดรูปสลาก, ป้ายทะเบียน, บ้านเลขที่<br />
+            AI จะวิเคราะห์และแนะนำ<strong style={{ color: '#c4b5fd' }}>เลขมงคล</strong>ให้ทันที<br /><br />
+            ต้องเข้าสู่ระบบและสมัคร Premium เพื่อใช้ฟีเจอร์นี้
+          </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button onClick={onShowAuth} className="btn-ghost press"
+              style={{ borderRadius: 14, padding: '11px 24px', fontSize: 14 }}>
+              🔑 เข้าสู่ระบบ
+            </button>
+            <button onClick={onShowAuth} className="btn-primary press"
+              style={{ borderRadius: 14, padding: '11px 24px', fontSize: 14, fontWeight: 700 }}>
+              ✨ สมัครฟรี
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Paywall: login แล้วแต่ยังไม่ Premium ────────────────────────
+  if (!userIsPremium) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 4 }}>📷 สแกนเลขด้วย AI</h2>
+          <p style={{ fontSize: 13, color: '#64748b' }}>ถ่ายหรืออัปโหลดภาพที่มีตัวเลข → AI วิเคราะห์และแนะนำเลขมงคล</p>
+        </div>
+        <div className="gb-animated glass spring-in" style={{ borderRadius: 20, padding: 36, textAlign: 'center' }}>
+          <div style={{ fontSize: 52, marginBottom: 14 }}>💎</div>
+          <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 17, marginBottom: 8 }}>
+            ฟีเจอร์ Premium
+          </div>
+          <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 8, lineHeight: 1.7 }}>
+            สวัสดี <strong style={{ color: '#c4b5fd' }}>{session.username}</strong> 👋<br />
+            สแกนเลข AI ใช้ได้สำหรับ Premium เท่านั้น
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 24, alignItems: 'center' }}>
+            {[
+              '📷 สแกนสลาก / ป้ายทะเบียน / บ้านเลขที่',
+              '🤖 AI วิเคราะห์และแนะนำเลขมงคล',
+              '🎰 ตีความฝันด้วย AI ไม่จำกัด',
+              '🔮 ทำนายเลข 2/3/6 ตัว',
+            ].map(f => (
+              <div key={f} style={{ fontSize: 13, color: '#64748b', display: 'flex', alignItems: 'center', gap: 6 }}>
+                {f}
+              </div>
+            ))}
+          </div>
+          <button onClick={onShowSubscription} className="btn-primary press"
+            style={{ borderRadius: 14, padding: '13px 36px', fontSize: 15, fontWeight: 700 }}>
+            💎 อัปเกรด Premium — 59 ฿/เดือน
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Premium user: แสดง scanner ───────────────────────────────────
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       {/* Header */}
-      <div>
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 4 }}>📷 สแกนเลขด้วย AI</h2>
-        <p style={{ fontSize: 13, color: '#64748b' }}>
-          ถ่ายหรืออัปโหลดภาพที่มีตัวเลข → AI วิเคราะห์และแนะนำเลขมงคล
-        </p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 4 }}>📷 สแกนเลขด้วย AI</h2>
+          <p style={{ fontSize: 13, color: '#64748b' }}>
+            ถ่ายหรืออัปโหลดภาพที่มีตัวเลข → AI วิเคราะห์และแนะนำเลขมงคล
+          </p>
+        </div>
+        <span className="badge badge-premium" style={{ fontSize: 11, flexShrink: 0 }}>💎 Premium</span>
       </div>
 
       {/* Upload / Camera area */}
@@ -153,8 +247,7 @@ export default function NumberScanner() {
             {loading && (
               <div style={{
                 position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                gap: 12,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
               }}>
                 <div style={{ fontSize: 40 }}>🔮</div>
                 <div style={{ fontSize: 14, color: '#c4b5fd', fontWeight: 600 }}>AI กำลังวิเคราะห์ภาพ...</div>
@@ -162,11 +255,8 @@ export default function NumberScanner() {
             )}
           </div>
           <div style={{ padding: '12px 16px', display: 'flex', gap: 10 }}>
-            <button
-              onClick={handleReset}
-              className="btn-ghost press"
-              style={{ flex: 1, padding: '9px 0', fontSize: 13, borderRadius: 10 }}
-            >
+            <button onClick={handleReset} className="btn-ghost press"
+              style={{ flex: 1, padding: '9px 0', fontSize: 13, borderRadius: 10 }}>
               🔄 เปลี่ยนรูป
             </button>
             {!loading && !result && (
@@ -201,12 +291,10 @@ export default function NumberScanner() {
             <span className="badge badge-cyan" style={{ fontSize: 11 }}>{result.confidence}%</span>
           </div>
 
-          {/* Interpretation */}
           <div style={{ marginBottom: 16, padding: 12, background: 'rgba(255,255,255,0.03)', borderRadius: 12, borderLeft: '3px solid rgba(6,182,212,0.6)' }}>
             <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>{result.interpretation}</div>
           </div>
 
-          {/* All numbers found */}
           {result.numbers.length > 0 && (
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>🔢 ตัวเลขทั้งหมดที่พบ</div>
@@ -215,15 +303,13 @@ export default function NumberScanner() {
                   <span key={i} style={{
                     background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)',
                     color: '#e2e8f0', fontSize: 12, fontWeight: 700,
-                    padding: '4px 10px', borderRadius: 8,
-                    fontFamily: 'Space Grotesk, monospace',
+                    padding: '4px 10px', borderRadius: 8, fontFamily: 'Space Grotesk, monospace',
                   }}>{n}</span>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Lucky numbers */}
           {result.luckyNumbers.length > 0 && (
             <div>
               <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>⭐ เลขมงคลแนะนำ</div>
@@ -232,19 +318,13 @@ export default function NumberScanner() {
                   const is3 = n.length === 3
                   const is6 = n.length === 6
                   return is6 ? (
-                    <div key={i} className="prize-display num-reveal spring-in" style={{ padding: '6px 14px', animationDelay: `${i * 80}ms` }}>
-                      {n}
-                    </div>
+                    <div key={i} className="prize-display num-reveal spring-in" style={{ padding: '6px 14px', animationDelay: `${i * 80}ms` }}>{n}</div>
                   ) : is3 ? (
                     <div key={i} className="pill-cyan nf-bold num-reveal spring-in"
-                      style={{ fontSize: 14, padding: '0 12px', height: 36, animationDelay: `${i * 80}ms` }}>
-                      {n}
-                    </div>
+                      style={{ fontSize: 14, padding: '0 12px', height: 36, animationDelay: `${i * 80}ms` }}>{n}</div>
                   ) : (
                     <div key={i} className="ball b-md b-purple nf-bold ball-i num-reveal spring-in"
-                      style={{ animationDelay: `${i * 80}ms` }}>
-                      {n.padStart(2, '0')}
-                    </div>
+                      style={{ animationDelay: `${i * 80}ms` }}>{n.padStart(2, '0')}</div>
                   )
                 })}
               </div>
