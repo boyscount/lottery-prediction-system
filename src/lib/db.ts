@@ -6,7 +6,14 @@ import { lotteryHistory } from '../data/lotteryHistory'
 export async function getDraws(): Promise<LotteryDraw[]> {
   if (!supabaseReady) {
     const raw = localStorage.getItem('lottomind_draws')
-    return raw ? JSON.parse(raw) : lotteryHistory
+    if (!raw) return lotteryHistory
+    // Merge: lotteryHistory is authoritative (real data).
+    // Any stored draws NOT in lotteryHistory are kept (admin additions).
+    const stored: LotteryDraw[] = JSON.parse(raw)
+    const historyIds = new Set(lotteryHistory.map(d => d.id))
+    const userAdded  = stored.filter(d => !historyIds.has(d.id))
+    const merged     = [...lotteryHistory, ...userAdded]
+    return merged.sort((a, b) => a.date.localeCompare(b.date))
   }
   const { data, error } = await supabase
     .from('lottery_draws')

@@ -11,6 +11,11 @@ interface Props {
 
 const MONTH_TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
 
+function thaiDate(iso: string) {
+  const d = new Date(iso + 'T00:00:00')
+  return `${d.getDate()} ${MONTH_TH[d.getMonth()]} ${d.getFullYear() + 543}`
+}
+
 function useCountdown(targetDate: string) {
   const [diff, setDiff] = useState(0)
   useEffect(() => {
@@ -122,53 +127,154 @@ export default function Dashboard({ draws, onNavigate }: Props) {
       </div>
 
       {/* ══ LATEST RESULT ══ */}
-      {latest && (
-        <div className="glass" style={{ borderRadius: 22, padding: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, color: '#e2e8f0' }}>
-              <span>🏆</span> ผลล่าสุด
-            </div>
-            <span className="badge badge-amber">{latest.date}</span>
-          </div>
+      {latest && (() => {
+        const recent = [...draws].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 4)
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-          {/* First prize */}
-          <div style={{
-            textAlign: 'center', padding: '16px 12px', borderRadius: 16, marginBottom: 16,
-            background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.14)',
-          }}>
-            <div style={{ fontSize: 11, color: '#78716c', marginBottom: 6, letterSpacing: '0.06em', textTransform: 'uppercase' }}>รางวัลที่ 1</div>
-            <div className="prize-display" style={{ fontSize: 'clamp(36px,8vw,56px)' }}>
-              {latest.firstPrize}
-            </div>
-          </div>
+            {/* Main latest card */}
+            <div className="glass" style={{ borderRadius: 22, overflow: 'hidden', border: '1px solid rgba(245,158,11,0.2)' }}>
+              {/* Header ribbon */}
+              <div style={{
+                background: 'linear-gradient(90deg, rgba(245,158,11,0.18) 0%, rgba(245,158,11,0.06) 100%)',
+                padding: '12px 20px',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                borderBottom: '1px solid rgba(245,158,11,0.12)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 18 }}>🏆</span>
+                  <span style={{ fontWeight: 700, color: '#fbbf24', fontSize: 14 }}>ผลรางวัลล่าสุด</span>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#fde68a' }}>{thaiDate(latest.date)}</div>
+                  <div style={{ fontSize: 10, color: '#78716c', marginTop: 1 }}>งวดประจำวันที่ {latest.date}</div>
+                </div>
+              </div>
 
-          {/* Other prizes */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>หน้า 3 ตัว</div>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 6, flexWrap: 'wrap' }}>
-                {latest.threeDigitFront.map(n => (
-                  <div key={n} className="pill-purple nf-bold" style={{ fontSize: 14, padding: '0 10px', height: 38 }}>{n}</div>
-                ))}
+              <div style={{ padding: '20px 20px 18px' }}>
+                {/* First prize — big */}
+                <div style={{ textAlign: 'center', marginBottom: 18 }}>
+                  <div style={{ fontSize: 11, color: '#78716c', marginBottom: 8, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                    🥇 รางวัลที่ 1 · 6,000,000 บาท
+                  </div>
+                  <div className="prize-display spring-in" style={{ fontSize: 'clamp(40px,9vw,60px)', letterSpacing: '0.12em' }}>
+                    {latest.firstPrize}
+                  </div>
+                </div>
+
+                {/* Divider */}
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '0 0 16px' }} />
+
+                {/* 3-digit + 2-digit prizes */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+                  {/* Front 3 */}
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: '#64748b', marginBottom: 8, fontWeight: 600, letterSpacing: '0.04em' }}>
+                      🔢 หน้า 3 ตัว
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                      {latest.threeDigitFront.map((n, i) => (
+                        <div key={n} className={`pill-purple nf-bold num-reveal`}
+                          style={{ fontSize: 15, padding: '0 12px', height: 38, animationDelay: `${i * 80}ms` }}>
+                          {n}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Back 3 */}
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: '#64748b', marginBottom: 8, fontWeight: 600, letterSpacing: '0.04em' }}>
+                      🔢 ท้าย 3 ตัว
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                      {latest.threeDigitBack.map((n, i) => (
+                        <div key={n} className={`pill-cyan nf-bold num-reveal`}
+                          style={{ fontSize: 15, padding: '0 12px', height: 38, animationDelay: `${i * 80 + 40}ms` }}>
+                          {n}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Back 2 */}
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: '#64748b', marginBottom: 8, fontWeight: 600, letterSpacing: '0.04em' }}>
+                      🎯 ท้าย 2 ตัว
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
+                      <div className="ball b-xl b-green nf-bold num-reveal" style={{ animationDelay: '160ms' }}>
+                        {latest.twoDigitBack}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>ท้าย 3 ตัว</div>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 6, flexWrap: 'wrap' }}>
-                {latest.threeDigitBack.map(n => (
-                  <div key={n} className="pill-cyan nf-bold" style={{ fontSize: 14, padding: '0 10px', height: 38 }}>{n}</div>
-                ))}
+
+            {/* Previous 3 draws — compact timeline */}
+            {recent.length > 1 && (
+              <div className="glass" style={{ borderRadius: 18, padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>📋</span> ผลย้อนหลัง
+                  </div>
+                  <button
+                    onClick={() => onNavigate('history')}
+                    style={{ fontSize: 11, color: '#7c3aed', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                  >
+                    ดูทั้งหมด →
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {recent.slice(1).map((draw, i) => (
+                    <div key={draw.id} className="spring-in" style={{
+                      animationDelay: `${i * 60}ms`,
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 10px', borderRadius: 12,
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid rgba(255,255,255,0.05)',
+                    }}>
+                      {/* Date */}
+                      <div style={{ flexShrink: 0, textAlign: 'center', minWidth: 60 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8' }}>{thaiDate(draw.date)}</div>
+                      </div>
+                      {/* Divider */}
+                      <div style={{ width: 1, height: 28, background: 'rgba(255,255,255,0.07)', flexShrink: 0 }} />
+                      {/* First prize */}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 9, color: '#4b5563', marginBottom: 2 }}>รางวัลที่ 1</div>
+                        <div className="nf-bold" style={{ fontSize: 16, color: '#fbbf24', letterSpacing: '0.08em' }}>
+                          {draw.firstPrize}
+                        </div>
+                      </div>
+                      {/* 2-digit */}
+                      <div style={{ textAlign: 'center', flexShrink: 0 }}>
+                        <div style={{ fontSize: 9, color: '#4b5563', marginBottom: 3 }}>2 ตัวท้าย</div>
+                        <div className="ball b-sm b-green nf-bold">{draw.twoDigitBack}</div>
+                      </div>
+                      {/* 3-digit back */}
+                      <div style={{ textAlign: 'center', flexShrink: 0 }}>
+                        <div style={{ fontSize: 9, color: '#4b5563', marginBottom: 3 }}>3 ตัวท้าย</div>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          {draw.threeDigitBack.map(n => (
+                            <span key={n} style={{
+                              fontSize: 10, fontWeight: 700,
+                              background: 'rgba(6,182,212,0.15)', border: '1px solid rgba(6,182,212,0.3)',
+                              color: '#67e8f9', padding: '2px 5px', borderRadius: 5,
+                              fontFamily: 'Space Grotesk, monospace',
+                            }}>{n}</span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>ท้าย 2 ตัว</div>
-              <div style={{ display: 'flex', justifyContent: 'center' }}>
-                <div className="ball b-lg b-green nf-bold">{latest.twoDigitBack}</div>
-              </div>
-            </div>
+            )}
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* ══ COMMUNITY TRENDING ══ */}
       <div className="glass" style={{ borderRadius: 20, padding: 18 }}>
