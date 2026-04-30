@@ -16,23 +16,65 @@ function thaiDate(iso: string) {
   return `${d.getDate()} ${MONTH_TH[d.getMonth()]} ${d.getFullYear() + 543}`
 }
 
-function useCountdown(targetDate: string) {
-  const [diff, setDiff] = useState(0)
+// ── Thailand time helpers ────────────────────────────────────────
+function getThaiNow(): Date {
+  const now = new Date()
+  // Convert to UTC+7 regardless of user timezone
+  return new Date(now.getTime() + (7 * 60 - now.getTimezoneOffset()) * 60000)
+}
+function getTodayThaiISO(): string {
+  return getThaiNow().toISOString().split('T')[0]
+}
+function getThaiHourMinute(): { h: number; m: number } {
+  const t = getThaiNow()
+  return { h: t.getUTCHours(), m: t.getUTCMinutes() }
+}
+
+// Draw day: 1st, 2nd, 16th, 17th of any month (accounts for Thai holiday shifts)
+function isDrawDateISO(iso: string): boolean {
+  const day = parseInt(iso.split('-')[2], 10)
+  return day === 1 || day === 2 || day === 16 || day === 17
+}
+
+type DrawDayPhase =
+  | 'normal'      // not draw day
+  | 'today-pre'   // draw day, before 14:00 → show countdown to 15:00
+  | 'today-live'  // 14:00–15:30 → LIVE banner
+  | 'today-wait'  // after 15:30, result not yet in data
+  | 'today-done'  // result for today is already in data
+
+function useDrawDayPhase(todayISO: string, latestDate: string): DrawDayPhase {
+  const [phase, setPhase] = useState<DrawDayPhase>('normal')
   useEffect(() => {
     function calc() {
-      const now  = new Date()
-      const draw = new Date(targetDate + 'T00:00:00')
-      setDiff(Math.max(0, draw.getTime() - now.getTime()))
+      if (!isDrawDateISO(todayISO)) { setPhase('normal'); return }
+      if (latestDate >= todayISO) { setPhase('today-done'); return }
+      const { h, m } = getThaiHourMinute()
+      const totalMin = h * 60 + m
+      if (totalMin < 14 * 60)          setPhase('today-pre')
+      else if (totalMin < 15 * 60 + 30) setPhase('today-live')
+      else                              setPhase('today-wait')
     }
+    calc()
+    const id = setInterval(calc, 10000) // re-check every 10s
+    return () => clearInterval(id)
+  }, [todayISO, latestDate])
+  return phase
+}
+
+function useCountdown(targetMs: number) {
+  const [diff, setDiff] = useState(0)
+  useEffect(() => {
+    function calc() { setDiff(Math.max(0, targetMs - Date.now())) }
     calc()
     const id = setInterval(calc, 1000)
     return () => clearInterval(id)
-  }, [targetDate])
+  }, [targetMs])
   const days    = Math.floor(diff / 86400000)
   const hours   = Math.floor((diff % 86400000) / 3600000)
   const minutes = Math.floor((diff % 3600000)  / 60000)
   const seconds = Math.floor((diff % 60000)    / 1000)
-  return { days, hours, minutes, seconds, urgent: days <= 3 }
+  return { days, hours, minutes, seconds, urgent: days <= 3 && diff > 0 }
 }
 
 // Simulated community trending — weighted by frequency + seeded randomness per draw-date
@@ -55,38 +97,179 @@ function useCommunityTrending(draws: LotteryDraw[]) {
 }
 
 export default function Dashboard({ draws, onNavigate }: Props) {
-  const latest   = [...draws].sort((a, b) => b.date.localeCompare(a.date))[0]
+  const sorted   = useMemo(() => [...draws].sort((a, b) => b.date.localeCompare(a.date)), [draws])
+  const latest   = sorted[0]
   const nextDraw = getNextDrawDate()
-  const { days, hours, minutes, seconds, urgent } = useCountdown(nextDraw)
+  const todayISO = getTodayThaiISO()
+  const phase    = useDrawDayPhase(todayISO, latest?.date ?? '')
+
+  // Countdown target: if today-pre → countdown to 15:00 today Thai time; else → next draw midnight
+  const countdownTarget = useMemo(() => {
+    if (phase === 'today-pre') {
+      const thai = getThaiNow()
+      const target = new Date(thai)
+      target.setUTCHours(15 - (thai.getUTCHours() - thai.getUTCHours()), 0, 0, 0) // 15:00 Thai = 08:00 UTC
+      // Build today 15:00 UTC+7 = 08:00 UTC
+      const [y, mo, d] = todayISO.split('-').map(Number)
+      return new Date(Date.UTC(y, mo - 1, d, 8, 0, 0)).getTime() // 15:00 Thai
+    }
+    return new Date(nextDraw + 'T00:00:00').getTime()
+  }, [phase, nextDraw, todayISO])
+
+  const { days, hours, minutes, seconds, urgent } = useCountdown(countdownTarget)
   const hot      = getHotNumbers(draws, 8)
   const cold     = getColdNumbers(draws, 8)
   const lunar    = getCurrentLunarInfo()
   const trending = useCommunityTrending(draws)
 
-  const nd = new Date(nextDraw)
+  const nd = new Date(nextDraw + 'T00:00:00')
   const drawLabel = `${nd.getDate()} ${MONTH_TH[nd.getMonth()]} ${nd.getFullYear() + 543}`
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+  // ─── Hero: render different UI per phase ─────────────────────
+  function renderHero() {
 
-      {/* ══ HERO ══ */}
+    // ── Phase: today-done — ผลออกแล้ว! ──────────────────────────
+    if (phase === 'today-done' && latest) {
+      return (
+        <div style={{ borderRadius: 28, overflow: 'hidden', border: '1px solid rgba(34,197,94,0.4)', background: 'linear-gradient(160deg, rgba(34,197,94,0.08) 0%, rgba(2,8,20,0.6) 60%)' }}>
+          {/* Celebration header */}
+          <div style={{ padding: '18px 20px 14px', textAlign: 'center', borderBottom: '1px solid rgba(34,197,94,0.15)', background: 'rgba(34,197,94,0.06)' }}>
+            <div style={{ fontSize: 32, marginBottom: 6 }}>🎉</div>
+            <div className="nf-bold" style={{ fontSize: 20, color: '#4ade80', marginBottom: 2 }}>ผลรางวัลออกแล้ว!</div>
+            <div style={{ fontSize: 12, color: '#64748b' }}>งวดวันที่ {thaiDate(latest.date)}</div>
+          </div>
+          {/* Prize */}
+          <div style={{ padding: '20px 20px 14px', textAlign: 'center' }}>
+            <div style={{ fontSize: 11, color: '#78716c', marginBottom: 8, letterSpacing: '0.1em' }}>🥇 รางวัลที่ 1</div>
+            <div className="prize-display spring-in" style={{ fontSize: 'clamp(40px,10vw,60px)', letterSpacing: '0.12em', color: '#fbbf24' }}>
+              {latest.firstPrize}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 20, marginTop: 16 }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 10, color: '#4b5563', marginBottom: 6 }}>ท้าย 2 ตัว</div>
+                <div className="ball b-lg b-green nf-bold">{latest.twoDigitBack}</div>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 10, color: '#4b5563', marginBottom: 6 }}>ท้าย 3 ตัว</div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {latest.threeDigitBack.map(n => (
+                    <div key={n} className="pill-cyan nf-bold" style={{ fontSize: 14, padding: '0 10px', height: 38 }}>{n}</div>
+                  ))}
+                </div>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 10, color: '#4b5563', marginBottom: 6 }}>หน้า 3 ตัว</div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {latest.threeDigitFront.map(n => (
+                    <div key={n} className="pill-purple nf-bold" style={{ fontSize: 14, padding: '0 10px', height: 38 }}>{n}</div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+          {/* Next draw */}
+          <div style={{ padding: '10px 20px 16px', textAlign: 'center' }}>
+            <div style={{ fontSize: 11, color: '#374151' }}>งวดถัดไป → <span style={{ color: '#c4b5fd', fontWeight: 600 }}>{drawLabel}</span></div>
+          </div>
+        </div>
+      )
+    }
+
+    // ── Phase: today-live — กำลังออกรางวัล LIVE ─────────────────
+    if (phase === 'today-live') {
+      return (
+        <div style={{ borderRadius: 28, overflow: 'hidden', border: '1px solid rgba(239,68,68,0.5)', background: 'linear-gradient(160deg, rgba(239,68,68,0.1) 0%, rgba(2,8,20,0.7) 60%)' }}>
+          <div style={{ padding: '28px 20px', textAlign: 'center' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.5)', borderRadius: 999, padding: '6px 16px', marginBottom: 16 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', display: 'inline-block', animation: 'pulse 1s infinite' }} />
+              <span style={{ fontSize: 12, color: '#fca5a5', fontWeight: 700, letterSpacing: '0.06em' }}>LIVE · กำลังออกรางวัล</span>
+            </div>
+            <div className="nf-bold" style={{ fontSize: 26, color: '#fff', marginBottom: 8 }}>🎰 ลุ้นผลพร้อมกันเลย!</div>
+            <div style={{ fontSize: 14, color: '#94a3b8', marginBottom: 20 }}>สลากกินแบ่งรัฐบาล งวด {thaiDate(todayISO)}</div>
+            <div style={{ fontSize: 13, color: '#fca5a5', marginBottom: 20 }}>ประกาศผลเวลา 15.00–16.00 น. (ตามเวลาประเทศไทย)</div>
+            <button className="btn-ghost press" onClick={() => window.location.reload()}
+              style={{ padding: '10px 24px', fontSize: 13, borderRadius: 12, color: '#fca5a5', borderColor: 'rgba(239,68,68,0.4)' }}>
+              🔄 รีเฟรชเพื่อดูผล
+            </button>
+          </div>
+        </div>
+      )
+    }
+
+    // ── Phase: today-wait — รอผลอัปเดต ──────────────────────────
+    if (phase === 'today-wait') {
+      return (
+        <div style={{ borderRadius: 28, overflow: 'hidden', border: '1px solid rgba(245,158,11,0.4)', background: 'linear-gradient(160deg, rgba(245,158,11,0.08) 0%, rgba(2,8,20,0.7) 60%)' }}>
+          <div style={{ padding: '28px 20px', textAlign: 'center' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>⏳</div>
+            <div className="nf-bold" style={{ fontSize: 22, color: '#fbbf24', marginBottom: 8 }}>รอผลล่าสุด...</div>
+            <div style={{ fontSize: 13, color: '#78716c', marginBottom: 20, lineHeight: 1.6 }}>
+              หวยออกวันนี้ ({thaiDate(todayISO)}) ผลอาจยังไม่ได้อัปเดต<br />
+              กรุณารีเฟรชหน้าในอีกสักครู่
+            </div>
+            <button className="btn-primary press" onClick={() => window.location.reload()}
+              style={{ padding: '12px 28px', fontSize: 14, borderRadius: 12 }}>
+              🔄 รีเฟรชดูผล
+            </button>
+          </div>
+        </div>
+      )
+    }
+
+    // ── Phase: today-pre — วันนี้หวยออก (ยังไม่ถึงเวลา) ─────────
+    if (phase === 'today-pre') {
+      return (
+        <div style={{ borderRadius: 28, overflow: 'hidden', border: '1px solid rgba(245,158,11,0.35)', background: 'linear-gradient(160deg, rgba(245,158,11,0.09) 0%, rgba(2,8,20,0.7) 60%)' }}>
+          {/* Banner */}
+          <div style={{ background: 'linear-gradient(90deg, rgba(245,158,11,0.25), rgba(245,158,11,0.08))', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderBottom: '1px solid rgba(245,158,11,0.15)' }}>
+            <span style={{ fontSize: 18 }}>🎰</span>
+            <span className="nf-bold" style={{ fontSize: 14, color: '#fbbf24' }}>วันนี้หวยออก!</span>
+            <span style={{ fontSize: 12, color: '#78716c' }}>· ประกาศผล 15.00 น.</span>
+          </div>
+          <div style={{ padding: '22px 16px', textAlign: 'center' }}>
+            <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 6 }}>นับถอยหลังถึงเวลาประกาศผล</div>
+            <div style={{ fontSize: 12, color: '#78716c', marginBottom: 16 }}>งวด {thaiDate(todayISO)}</div>
+            {/* Countdown to 15:00 */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 18 }}>
+              {[
+                { val: hours,   lbl: 'ชม.' },
+                { val: minutes, lbl: 'นาที' },
+                { val: seconds, lbl: 'วิ' },
+              ].map((b, i) => (
+                <React.Fragment key={b.lbl}>
+                  <div className="countdown-block" style={{ borderColor: 'rgba(245,158,11,0.3)', background: 'rgba(245,158,11,0.08)' }}>
+                    <span className="countdown-val urgent">{String(b.val).padStart(2, '0')}</span>
+                    <span className="countdown-lbl">{b.lbl}</span>
+                  </div>
+                  {i < 2 && <span style={{ color: '#d97706', fontSize: 18, fontWeight: 800, marginBottom: 14, lineHeight: 1, flexShrink: 0 }}>:</span>}
+                </React.Fragment>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button className="btn-primary press" onClick={() => onNavigate('predict')}
+                style={{ padding: '12px 24px', fontSize: 13, borderRadius: 14, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                🎯 ทำนายก่อนออก
+              </button>
+              <button className="btn-ghost press" onClick={() => onNavigate('journal')}
+                style={{ padding: '12px 18px', fontSize: 13, borderRadius: 14 }}>
+                📓 จดเลข
+              </button>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    // ── Phase: normal — countdown ปกติ ───────────────────────────
+    return (
       <div className="gb-animated" style={{ borderRadius: 28 }}>
         <div style={{ position: 'relative', padding: '24px 16px', textAlign: 'center', overflow: 'visible' }}>
-          {/* Glow layers */}
-          <div style={{
-            position: 'absolute', inset: 0, pointerEvents: 'none',
-            background: 'radial-gradient(ellipse 100% 80% at 50% 0%, rgba(124,58,237,0.2) 0%, transparent 60%)',
-          }} />
-
+          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'radial-gradient(ellipse 100% 80% at 50% 0%, rgba(124,58,237,0.2) 0%, transparent 60%)' }} />
           <div style={{ position: 'relative' }}>
             <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
               งวดถัดไป · สลากกินแบ่งรัฐบาล
             </div>
-            <div className="nf-bold" style={{ fontSize: 24, color: '#fff', marginBottom: 20 }}>
-              {drawLabel}
-            </div>
-
-            {/* Live countdown blocks */}
+            <div className="nf-bold" style={{ fontSize: 24, color: '#fff', marginBottom: 20 }}>{drawLabel}</div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 18 }}>
               {[
                 { val: days,    lbl: 'วัน' },
@@ -96,17 +279,13 @@ export default function Dashboard({ draws, onNavigate }: Props) {
               ].map((b, i) => (
                 <React.Fragment key={b.lbl}>
                   <div className="countdown-block">
-                    <span className={`countdown-val${urgent ? ' urgent' : ''}`}>
-                      {String(b.val).padStart(2, '0')}
-                    </span>
+                    <span className={`countdown-val${urgent ? ' urgent' : ''}`}>{String(b.val).padStart(2, '0')}</span>
                     <span className="countdown-lbl">{b.lbl}</span>
                   </div>
                   {i < 3 && <span style={{ color: '#374151', fontSize: 18, fontWeight: 800, marginBottom: 14, lineHeight: 1, flexShrink: 0 }}>:</span>}
                 </React.Fragment>
               ))}
             </div>
-
-            {/* Lunar */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 22 }}>
               <span style={{ fontSize: 18 }}>{lunar.phaseEmoji}</span>
               <span style={{ fontSize: 13, color: lunar.auspicious ? '#86efac' : '#64748b' }}>
@@ -114,17 +293,21 @@ export default function Dashboard({ draws, onNavigate }: Props) {
                 {lunar.auspicious && <span style={{ marginLeft: 6, color: '#86efac' }}>✨ วันมงคล</span>}
               </span>
             </div>
-
-            <button
-              className="btn-primary anim-pulse-glow"
-              onClick={() => onNavigate('predict')}
-              style={{ padding: '14px 36px', fontSize: 16, borderRadius: 16, display: 'inline-flex', alignItems: 'center', gap: 8 }}
-            >
+            <button className="btn-primary anim-pulse-glow" onClick={() => onNavigate('predict')}
+              style={{ padding: '14px 36px', fontSize: 16, borderRadius: 16, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               🎯 ทำนายเลขเลย
             </button>
           </div>
         </div>
       </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+      {/* ══ HERO (state-aware) ══ */}
+      {renderHero()}
 
       {/* ══ LATEST RESULT ══ */}
       {latest && (() => {

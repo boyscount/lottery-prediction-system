@@ -400,6 +400,10 @@ body::after {
   0%,100% { box-shadow: 0 0 18px rgba(124,58,237,0.4), 0 0 35px rgba(124,58,237,0.1); }
   50%      { box-shadow: 0 0 30px rgba(124,58,237,0.75), 0 0 60px rgba(124,58,237,0.3); }
 }
+@keyframes pulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(1.6); }
+}
 @keyframes pulse-soft {
   0%,100% { opacity:1; } 50% { opacity:0.65; }
 }
