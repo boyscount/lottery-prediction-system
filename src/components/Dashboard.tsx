@@ -30,33 +30,50 @@ function getThaiHourMinute(): { h: number; m: number } {
   return { h: t.getUTCHours(), m: t.getUTCMinutes() }
 }
 
-// Draw day: 1st, 2nd, 16th, 17th of any month (accounts for Thai holiday shifts)
+// Draw day: 1st, 2nd, 16th, 17th of any month
 function isDrawDateISO(iso: string): boolean {
   const day = parseInt(iso.split('-')[2], 10)
   return day === 1 || day === 2 || day === 16 || day === 17
 }
+function addDaysISO(iso: string, n: number): string {
+  const d = new Date(iso + 'T00:00:00')
+  d.setDate(d.getDate() + n)
+  return d.toISOString().split('T')[0]
+}
 
 type DrawDayPhase =
-  | 'normal'      // not draw day
-  | 'today-pre'   // draw day, before 14:00 → show countdown to 15:00
+  | 'normal'      // not draw day, > 1 day away
+  | 'today-eve'   // tomorrow is draw day — "หวยออกพรุ่งนี้!"
+  | 'today-pre'   // draw day, before 14:00 → countdown to 15:00
   | 'today-live'  // 14:00–15:30 → LIVE banner
-  | 'today-wait'  // after 15:30, result not yet in data
-  | 'today-done'  // result for today is already in data
+  | 'today-wait'  // after 15:30, no result yet
+  | 'today-done'  // result for today already in data
 
 function useDrawDayPhase(todayISO: string, latestDate: string): DrawDayPhase {
   const [phase, setPhase] = useState<DrawDayPhase>('normal')
   useEffect(() => {
     function calc() {
-      if (!isDrawDateISO(todayISO)) { setPhase('normal'); return }
-      if (latestDate >= todayISO) { setPhase('today-done'); return }
-      const { h, m } = getThaiHourMinute()
-      const totalMin = h * 60 + m
-      if (totalMin < 14 * 60)          setPhase('today-pre')
-      else if (totalMin < 15 * 60 + 30) setPhase('today-live')
-      else                              setPhase('today-wait')
+      // Result already available for today → done
+      if (latestDate >= todayISO && isDrawDateISO(todayISO)) {
+        setPhase('today-done'); return
+      }
+      // Today is draw day
+      if (isDrawDateISO(todayISO)) {
+        const { h, m } = getThaiHourMinute()
+        const totalMin = h * 60 + m
+        if (totalMin < 14 * 60)           setPhase('today-pre')
+        else if (totalMin < 15 * 60 + 30) setPhase('today-live')
+        else                              setPhase('today-wait')
+        return
+      }
+      // Tomorrow is draw day → eve
+      if (isDrawDateISO(addDaysISO(todayISO, 1))) {
+        setPhase('today-eve'); return
+      }
+      setPhase('normal')
     }
     calc()
-    const id = setInterval(calc, 10000) // re-check every 10s
+    const id = setInterval(calc, 10000)
     return () => clearInterval(id)
   }, [todayISO, latestDate])
   return phase
@@ -211,6 +228,77 @@ export default function Dashboard({ draws, onNavigate }: Props) {
               style={{ padding: '12px 28px', fontSize: 14, borderRadius: 12 }}>
               🔄 รีเฟรชดูผล
             </button>
+          </div>
+        </div>
+      )
+    }
+
+    // ── Phase: today-eve — หวยออกพรุ่งนี้! ──────────────────────
+    if (phase === 'today-eve') {
+      const tomorrowISO = addDaysISO(todayISO, 1)
+      return (
+        <div className="gb-animated" style={{ borderRadius: 28, overflow: 'hidden' }}>
+          {/* Eve ribbon */}
+          <div style={{
+            background: 'linear-gradient(90deg, rgba(124,58,237,0.35), rgba(6,182,212,0.15))',
+            padding: '8px 20px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            borderBottom: '1px solid rgba(124,58,237,0.2)',
+          }}>
+            <span style={{ fontSize: 16 }}>🎰</span>
+            <span className="nf-bold" style={{ fontSize: 13, color: '#c4b5fd' }}>หวยออกพรุ่งนี้!</span>
+            <span style={{ fontSize: 12, color: '#64748b' }}>· {thaiDate(tomorrowISO)}</span>
+          </div>
+
+          <div style={{ position: 'relative', padding: '22px 16px', textAlign: 'center' }}>
+            <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'radial-gradient(ellipse 100% 80% at 50% 0%, rgba(124,58,237,0.18) 0%, transparent 60%)' }} />
+            <div style={{ position: 'relative' }}>
+              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4, letterSpacing: '0.08em', textTransform: 'uppercase' }}>เหลือเวลาอีก</div>
+              <div className="nf-bold" style={{ fontSize: 22, color: '#fff', marginBottom: 18 }}>{drawLabel}</div>
+
+              {/* Countdown — showing hours/min/sec since < 24h */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 16 }}>
+                {days > 0 && (
+                  <React.Fragment>
+                    <div className="countdown-block" style={{ borderColor: 'rgba(124,58,237,0.4)' }}>
+                      <span className="countdown-val urgent">{String(days).padStart(2,'0')}</span>
+                      <span className="countdown-lbl">วัน</span>
+                    </div>
+                    <span style={{ color: '#374151', fontSize: 18, fontWeight: 800, marginBottom: 14, lineHeight: 1 }}>:</span>
+                  </React.Fragment>
+                )}
+                {[
+                  { val: hours,   lbl: 'ชม.' },
+                  { val: minutes, lbl: 'นาที' },
+                  { val: seconds, lbl: 'วิ' },
+                ].map((b, i) => (
+                  <React.Fragment key={b.lbl}>
+                    <div className="countdown-block" style={{ borderColor: 'rgba(124,58,237,0.4)' }}>
+                      <span className="countdown-val urgent">{String(b.val).padStart(2, '0')}</span>
+                      <span className="countdown-lbl">{b.lbl}</span>
+                    </div>
+                    {i < 2 && <span style={{ color: '#374151', fontSize: 18, fontWeight: 800, marginBottom: 14, lineHeight: 1, flexShrink: 0 }}>:</span>}
+                  </React.Fragment>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 20 }}>
+                <span style={{ fontSize: 16 }}>{lunar.phaseEmoji}</span>
+                <span style={{ fontSize: 12, color: lunar.auspicious ? '#86efac' : '#64748b' }}>
+                  {lunar.phase}{lunar.auspicious && <span style={{ marginLeft: 6, color: '#86efac' }}>✨ วันมงคล</span>}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button className="btn-primary anim-pulse-glow press" onClick={() => onNavigate('predict')}
+                  style={{ padding: '13px 28px', fontSize: 15, borderRadius: 16, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  🎯 ทำนายเลขเลย
+                </button>
+                <button className="btn-ghost press" onClick={() => onNavigate('dream')}
+                  style={{ padding: '13px 20px', fontSize: 13, borderRadius: 16 }}>
+                  💭 ดูเลขจากฝัน
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )
