@@ -39,11 +39,13 @@ export default function AdminPanel({ session }: Props) {
 
   useEffect(() => {
     if (!supabaseReady) { setLoading(false); return }
-    Promise.all([adminGetUsers(), adminGetPayments()]).then(([u, p]) => {
-      setUsers(u as unknown as AdminUser[])
-      setPayments(p as unknown as AdminPayment[])
-      setLoading(false)
-    })
+    Promise.all([adminGetUsers(), adminGetPayments()])
+      .then(([u, p]) => {
+        setUsers(u as unknown as AdminUser[])
+        setPayments(p as unknown as AdminPayment[])
+      })
+      .catch(err => console.error('Admin load error:', err))
+      .finally(() => setLoading(false))
   }, [])
 
   async function handleSetPremium(userId: string) {

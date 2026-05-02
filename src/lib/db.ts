@@ -194,22 +194,21 @@ export async function getSubscription(userId: string) {
 // profiles.id และ subscriptions.user_id ต่างก็อ้างถึง auth.users(id)
 // ไม่มี FK ตรงถึงกัน → PostgREST embed ไม่ได้ → ทำ 2 query แยกแล้ว merge
 export async function adminGetUsers() {
-  const { data: profiles } = await supabase
-    .from('profiles')
-    .select('id, username, avatar_color, is_admin, created_at')
-    .order('created_at', { ascending: false })
+  // Parallel queries — ไม่รอทีละ query
+  const [{ data: profiles }, { data: subs }] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('id, username, avatar_color, is_admin, created_at')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('subscriptions')
+      .select('user_id, status, started_at, expires_at'),
+  ])
   if (!profiles?.length) return []
 
-  const { data: subs } = await supabase
-    .from('subscriptions')
-    .select('user_id, status, started_at, expires_at')
-    .in('user_id', profiles.map(p => p.id))
-
   const subMap = new Map(subs?.map(s => [s.user_id, s]) ?? [])
-
   return profiles.map(p => ({
     ...p,
-    // AdminPanel ใช้ subscriptions[0] จึง wrap เป็น array
     subscriptions: subMap.has(p.id) ? [subMap.get(p.id)!] : [],
   }))
 }
@@ -222,14 +221,12 @@ export async function adminGetPayments() {
     .limit(200)
   if (!payments?.length) return []
 
-  // ดึง usernames แยก
   const userIds = [...new Set(payments.filter(p => p.user_id).map(p => p.user_id))]
   const { data: profiles } = userIds.length
     ? await supabase.from('profiles').select('id, username').in('id', userIds)
     : { data: [] }
 
   const profMap = new Map(profiles?.map(p => [p.id, { username: p.username }]) ?? [])
-
   return payments.map(p => ({
     ...p,
     profiles: p.user_id ? (profMap.get(p.user_id) ?? null) : null,
