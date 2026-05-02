@@ -129,13 +129,20 @@ function parseLotteryDate(dateStr) {
   if (!dateStr) return null
   // ISO format already: "YYYY-MM-DD"
   if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr
-  // Thai Buddhist Era short month: "1 เม.ย. 2568"
-  const thaiMonths = {
+  // Thai Buddhist Era — full month names: "2 พฤษภาคม 2569"
+  const thaiMonthsFull = {
+    'มกราคม': 1, 'กุมภาพันธ์': 2, 'มีนาคม': 3, 'เมษายน': 4,
+    'พฤษภาคม': 5, 'มิถุนายน': 6, 'กรกฎาคม': 7, 'สิงหาคม': 8,
+    'กันยายน': 9, 'ตุลาคม': 10, 'พฤศจิกายน': 11, 'ธันวาคม': 12,
+  }
+  // Thai Buddhist Era — short month names: "1 เม.ย. 2568"
+  const thaiMonthsShort = {
     'ม.ค.': 1, 'ก.พ.': 2, 'มี.ค.': 3, 'เม.ย.': 4,
     'พ.ค.': 5, 'มิ.ย.': 6, 'ก.ค.': 7, 'ส.ค.': 8,
     'ก.ย.': 9, 'ต.ค.': 10, 'พ.ย.': 11, 'ธ.ค.': 12,
   }
-  for (const [m, n] of Object.entries(thaiMonths)) {
+  const allMonths = { ...thaiMonthsFull, ...thaiMonthsShort }
+  for (const [m, n] of Object.entries(allMonths)) {
     if (dateStr.includes(m)) {
       const clean = dateStr.replace(m, '').trim()
       const parts = clean.split(/\s+/).filter(Boolean)
@@ -162,48 +169,48 @@ app.get('/api/lottery/latest', async (req, res) => {
     }
 
     const response = await fetch('https://lotto.api.rayriffy.com/latest', {
-      headers: { 'User-Agent': 'LottoMind/1.0' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
       signal: AbortSignal.timeout(8000),
     })
     if (!response.ok) throw new Error(`Upstream ${response.status}`)
     const raw = await response.json()
 
-    // Rayriffy API shape: { status, response: { date, prizes: [...] } }
+    // Rayriffy API shape: { status, response: { date, prizes, runningNumbers } }
     const d = raw?.response ?? raw
     const dateStr = d?.date ?? d?.drawDate ?? d?.draw_date
     const isoDate = parseLotteryDate(String(dateStr ?? ''))
     if (!isoDate) throw new Error('Cannot parse date: ' + dateStr)
 
-    // Extract prizes — support both old and new shape
+    // รางวัลที่ 1 — อยู่ใน prizes[]
     const prizes = d?.prizes ?? []
-    function findPrize(name) {
-      const p = prizes.find(p =>
-        p.name?.includes(name) || p.type?.includes(name) || p.id?.includes(name)
-      )
-      return p?.number ?? p?.numbers?.[0] ?? null
+    function findInList(list, ...keys) {
+      for (const key of keys) {
+        const p = list.find(p => p.id?.includes(key) || p.name?.includes(key))
+        if (p) return p
+      }
+      return null
     }
-    function findPrizeAll(name) {
-      const p = prizes.find(p =>
-        p.name?.includes(name) || p.type?.includes(name) || p.id?.includes(name)
-      )
-      if (!p) return []
-      return Array.isArray(p.numbers) ? p.numbers : (p.number ? [p.number] : [])
-    }
-
-    const firstPrize = findPrize('รางวัลที่ 1') ?? findPrize('first') ?? d?.firstPrize
-    const threeDigitFront = findPrizeAll('เลขหน้า 3 ตัว') ?? findPrizeAll('threeDigitFront')
-    const threeDigitBack  = findPrizeAll('เลขท้าย 3 ตัว') ?? findPrizeAll('threeDigitBack')
-    const twoDigitBack    = findPrize('เลขท้าย 2 ตัว') ?? findPrize('twoDigitBack') ?? d?.twoDigitBack
-
+    const firstPrizeEntry = findInList(prizes, 'prizeFirst', 'รางวัลที่ 1', 'first')
+    const firstPrize = firstPrizeEntry?.number?.[0] ?? firstPrizeEntry?.number ?? d?.firstPrize
     if (!firstPrize) throw new Error('Missing firstPrize in response')
+
+    // เลขท้าย 3/2 ตัว — อยู่ใน runningNumbers[]
+    const running = d?.runningNumbers ?? []
+    const front3Entry = findInList(running, 'runningNumberFrontThree', 'เลขหน้า 3 ตัว')
+    const back3Entry  = findInList(running, 'runningNumberBackThree',  'เลขท้าย 3 ตัว')
+    const back2Entry  = findInList(running, 'runningNumberBackTwo',    'เลขท้าย 2 ตัว')
+
+    const threeDigitFront = (front3Entry?.number ?? []).slice(0, 2).map(String)
+    const threeDigitBack  = (back3Entry?.number  ?? []).slice(0, 2).map(String)
+    const twoDigitBack    = String((back2Entry?.number?.[0] ?? back2Entry?.number ?? ''))
 
     const draw = {
       id: isoDate,
       date: isoDate,
       firstPrize: String(firstPrize),
-      threeDigitFront: threeDigitFront.slice(0, 2).map(String),
-      threeDigitBack:  threeDigitBack.slice(0, 2).map(String),
-      twoDigitBack: String(twoDigitBack ?? ''),
+      threeDigitFront,
+      threeDigitBack,
+      twoDigitBack,
     }
 
     // Cache result
