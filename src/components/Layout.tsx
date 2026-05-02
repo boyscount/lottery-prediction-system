@@ -150,9 +150,13 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
                         </div>
                       </div>
                       <div style={{ marginTop: 10 }}>
-                        <span className="badge badge-ghost" style={{ fontSize: 11 }}>
-                          ✅ ใช้ฟรีทุก feature
-                        </span>
+                        {session.isAdmin ? (
+                          <span className="badge badge-red" style={{ fontSize: 11 }}>🛡️ Admin</span>
+                        ) : session.subscription.status === 'premium' ? (
+                          <span className="badge badge-amber" style={{ fontSize: 11 }}>💎 Premium</span>
+                        ) : (
+                          <span className="badge badge-ghost" style={{ fontSize: 11 }}>⬜ ใช้งานฟรี</span>
+                        )}
                       </div>
                     </div>
 
@@ -195,7 +199,9 @@ export default function Layout({ activeTab, onTabChange, children, session, onSe
                     <div className="user-dropdown glass" onClick={() => setMenuOpen(false)}>
                       <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                         <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 13 }}>{session.username}</div>
-                        <div style={{ fontSize: 10, color: '#4ade80', marginTop: 2 }}>✅ ใช้ฟรีทุก feature</div>
+                        <div style={{ fontSize: 10, marginTop: 2 }}>
+                          {session.isAdmin ? '🛡️ Admin' : session.subscription.status === 'premium' ? '💎 Premium' : '⬜ ใช้งานฟรี'}
+                        </div>
                       </div>
                       <button className="user-dropdown-item" onClick={handleLogout}>
                         <LogOut size={13} /> ออกจากระบบ
