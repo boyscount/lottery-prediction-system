@@ -179,6 +179,30 @@ export async function saveJournal(entries: JournalEntry[], userId?: string): Pro
   )
 }
 
+// ── Fetch latest draw from backend (auto-update) ────────────────
+export async function fetchLatestDraw(): Promise<LotteryDraw | null> {
+  const apiUrl = import.meta.env.VITE_API_URL
+  if (!apiUrl) return null
+  try {
+    const res = await fetch(`${apiUrl}/api/lottery/latest`, {
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!res.ok) return null
+    const d = await res.json()
+    if (!d?.id || !d?.firstPrize) return null
+    return {
+      id: d.id,
+      date: d.date,
+      firstPrize: d.firstPrize,
+      threeDigitFront: d.threeDigitFront ?? [],
+      threeDigitBack:  d.threeDigitBack  ?? [],
+      twoDigitBack:    d.twoDigitBack    ?? '',
+    }
+  } catch {
+    return null
+  }
+}
+
 // ── Subscription status ─────────────────────────────────────────
 export async function getSubscription(userId: string) {
   if (!supabaseReady) return null

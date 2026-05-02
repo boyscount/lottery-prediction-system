@@ -16,7 +16,7 @@ import { TabType, DreamSelection, AstrologyProfile, LotteryDraw, UserSession, Jo
 type ExtendedTabType = TabType | 'journal' | 'scanner' | 'admin'
 import { getSession, getSessionAsync, buildUserSession } from './utils/auth'
 import { supabase, supabaseReady } from './lib/supabase'
-import { getDraws, getDreams, getAstrology, saveDraws, saveDreams, saveAstrology, getJournal, saveJournal } from './lib/db'
+import { getDraws, getDreams, getAstrology, saveDraws, saveDreams, saveAstrology, getJournal, saveJournal, fetchLatestDraw } from './lib/db'
 
 // ── Save Data Nudge banner ──────────────────────────────────────
 function SaveDataNudge({ onSignup, onDismiss }: { onSignup: () => void; onDismiss: () => void }) {
@@ -88,6 +88,17 @@ export default function App() {
     getDreams(session?.userId).then(setDreamSelections)
     getAstrology(session?.userId).then(setAstrologyProfile)
     getJournal(session?.userId).then(setJournalEntries)
+
+    // Auto-fetch latest lottery result from backend
+    fetchLatestDraw().then(latest => {
+      if (!latest) return
+      setDraws(prev => {
+        const exists = prev.some(d => d.id === latest.id)
+        if (exists) return prev
+        // Insert and re-sort by date
+        return [...prev, latest].sort((a, b) => a.date.localeCompare(b.date))
+      })
+    })
   }, [])
 
   // Reload per-user data on session change

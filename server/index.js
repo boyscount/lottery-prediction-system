@@ -121,6 +121,116 @@ async function requirePremium(req, res, next) {
   next()
 }
 
+// ── GET /api/lottery/latest — ดึงผลหวยล่าสุดจาก rayriffy API ────────
+const lotteryCache = { data: null, ts: 0 }
+const LOTTERY_CACHE_TTL = 60 * 60 * 1000 // 1 hour
+
+function parseLotteryDate(dateStr) {
+  if (!dateStr) return null
+  // ISO format already: "YYYY-MM-DD"
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr
+  // Thai Buddhist Era short month: "1 เม.ย. 2568"
+  const thaiMonths = {
+    'ม.ค.': 1, 'ก.พ.': 2, 'มี.ค.': 3, 'เม.ย.': 4,
+    'พ.ค.': 5, 'มิ.ย.': 6, 'ก.ค.': 7, 'ส.ค.': 8,
+    'ก.ย.': 9, 'ต.ค.': 10, 'พ.ย.': 11, 'ธ.ค.': 12,
+  }
+  for (const [m, n] of Object.entries(thaiMonths)) {
+    if (dateStr.includes(m)) {
+      const clean = dateStr.replace(m, '').trim()
+      const parts = clean.split(/\s+/).filter(Boolean)
+      const day = parseInt(parts[0])
+      const year = parseInt(parts[parts.length - 1])
+      const gregYear = year > 2500 ? year - 543 : year
+      return `${gregYear}-${String(n).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    }
+  }
+  // Slash/dash: "01/04/2568" or "16-04-2568"
+  const match = dateStr.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/)
+  if (match) {
+    const y = parseInt(match[3]) > 2500 ? parseInt(match[3]) - 543 : parseInt(match[3])
+    return `${y}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`
+  }
+  return null
+}
+
+app.get('/api/lottery/latest', async (req, res) => {
+  try {
+    // Return cache if fresh
+    if (lotteryCache.data && (Date.now() - lotteryCache.ts) < LOTTERY_CACHE_TTL) {
+      return res.json(lotteryCache.data)
+    }
+
+    const response = await fetch('https://lotto.api.rayriffy.com/latest', {
+      headers: { 'User-Agent': 'LottoMind/1.0' },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!response.ok) throw new Error(`Upstream ${response.status}`)
+    const raw = await response.json()
+
+    // Rayriffy API shape: { status, response: { date, prizes: [...] } }
+    const d = raw?.response ?? raw
+    const dateStr = d?.date ?? d?.drawDate ?? d?.draw_date
+    const isoDate = parseLotteryDate(String(dateStr ?? ''))
+    if (!isoDate) throw new Error('Cannot parse date: ' + dateStr)
+
+    // Extract prizes — support both old and new shape
+    const prizes = d?.prizes ?? []
+    function findPrize(name) {
+      const p = prizes.find(p =>
+        p.name?.includes(name) || p.type?.includes(name) || p.id?.includes(name)
+      )
+      return p?.number ?? p?.numbers?.[0] ?? null
+    }
+    function findPrizeAll(name) {
+      const p = prizes.find(p =>
+        p.name?.includes(name) || p.type?.includes(name) || p.id?.includes(name)
+      )
+      if (!p) return []
+      return Array.isArray(p.numbers) ? p.numbers : (p.number ? [p.number] : [])
+    }
+
+    const firstPrize = findPrize('รางวัลที่ 1') ?? findPrize('first') ?? d?.firstPrize
+    const threeDigitFront = findPrizeAll('เลขหน้า 3 ตัว') ?? findPrizeAll('threeDigitFront')
+    const threeDigitBack  = findPrizeAll('เลขท้าย 3 ตัว') ?? findPrizeAll('threeDigitBack')
+    const twoDigitBack    = findPrize('เลขท้าย 2 ตัว') ?? findPrize('twoDigitBack') ?? d?.twoDigitBack
+
+    if (!firstPrize) throw new Error('Missing firstPrize in response')
+
+    const draw = {
+      id: isoDate,
+      date: isoDate,
+      firstPrize: String(firstPrize),
+      threeDigitFront: threeDigitFront.slice(0, 2).map(String),
+      threeDigitBack:  threeDigitBack.slice(0, 2).map(String),
+      twoDigitBack: String(twoDigitBack ?? ''),
+    }
+
+    // Cache result
+    lotteryCache.data = draw
+    lotteryCache.ts = Date.now()
+
+    // Persist to Supabase (upsert) if available
+    if (supabaseReady) {
+      supabase.from('lottery_draws').upsert({
+        id: draw.id,
+        draw_date: draw.date,
+        first_prize: draw.firstPrize,
+        three_digit_front: draw.threeDigitFront,
+        three_digit_back: draw.threeDigitBack,
+        two_digit_back: draw.twoDigitBack,
+      }, { onConflict: 'id' }).then(({ error }) => {
+        if (error) console.warn('Supabase upsert lottery draw error:', error.message)
+      })
+    }
+
+    res.json(draw)
+  } catch (err) {
+    console.error('fetchLatestLottery error:', err.message)
+    res.status(502).json({ error: 'ดึงข้อมูลหวยล่าสุดไม่สำเร็จ', detail: err.message })
+  }
+})
+
 // ── POST /api/payment/charge (card via Omise token) ───────────────
 app.post('/api/payment/charge', requireAuth, async (req, res) => {
   const { token } = req.body
