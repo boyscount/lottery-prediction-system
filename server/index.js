@@ -279,11 +279,12 @@ app.post('/api/ai/dream', requirePremium, async (req, res) => {
     const raw = await callClaude(
       [{ role: 'user', content: `ฉันฝันว่า: ${dreamText}` }],
       systemPrompt,
-      600
+      800
     )
 
-    // Extract JSON from response (handle markdown code blocks)
-    const jsonMatch = raw.match(/\{[\s\S]*\}/)
+    // Extract JSON — handle plain JSON or markdown code blocks (```json ... ```)
+    const stripped = raw.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '')
+    const jsonMatch = stripped.match(/\{[\s\S]*\}/)
     if (!jsonMatch) throw new Error('Invalid AI response format')
     const result = JSON.parse(jsonMatch[0])
 
@@ -351,12 +352,17 @@ app.post('/api/ai/scan', requirePremium, async (req, res) => {
         ],
       }],
       systemPrompt,
-      400
+      600
     )
 
-    const jsonMatch = raw.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('Invalid AI response')
-    const result = JSON.parse(jsonMatch[0])
+    // Extract JSON — handle plain JSON or markdown code blocks (```json ... ```)
+    const stripped = raw.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '')
+    const jsonMatch = stripped.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      console.error('Raw AI scan response:', raw.slice(0, 500))
+      throw new Error('Invalid AI response')
+    }
+    const result = JSON.parse(jsonMatch[0].trim())
 
     res.json({
       numbers: (result.numbers || []).slice(0, 20).map(String),
