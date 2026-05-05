@@ -75,13 +75,37 @@ export default function DonateModal({ onClose }: Props) {
               <div style={{ fontSize: 11, color: '#6b7280' }}>PromptPay · รับได้ทุกธนาคาร</div>
             </div>
 
+            {/* Email instruction */}
+            <div style={{
+              background: 'rgba(124,58,237,0.08)',
+              border: '1px solid rgba(124,58,237,0.2)',
+              borderRadius: 14, padding: '12px 16px', marginBottom: 16,
+            }}>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 6, fontWeight: 600 }}>
+                📧 หลังโอนแล้ว ส่ง slip มาที่
+              </div>
+              <a
+                href="mailto:kimminho.love1103@gmail.com"
+                style={{
+                  fontSize: 13, color: '#c4b5fd', fontWeight: 700,
+                  textDecoration: 'none', wordBreak: 'break-all',
+                }}
+              >
+                kimminho.love1103@gmail.com
+              </a>
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 6, lineHeight: 1.5 }}>
+                แจ้งชื่อผู้ใช้ในแอปด้วยนะครับ<br />
+                จะเปิดสิทธิ์ Premium ให้ภายใน 24 ชั่วโมง ✅
+              </div>
+            </div>
+
             {/* Done button */}
             <button
               onClick={handleDone}
               className="btn-primary"
               style={{ borderRadius: 16, padding: '14px 24px', fontSize: 15, width: '100%', marginBottom: 10 }}
             >
-              🙏 โอนแล้ว ขอบคุณ!
+              🙏 โอนแล้ว จะส่ง slip ให้!
             </button>
             <button
               onClick={onClose}
