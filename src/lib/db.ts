@@ -266,7 +266,7 @@ export async function adminSetPremium(userId: string, days: number) {
     started_at: new Date().toISOString(),
     expires_at: exp.toISOString(),
     updated_at: new Date().toISOString(),
-  })
+  }, { onConflict: 'user_id' })
 }
 
 export async function adminRevokeSubscription(userId: string) {
@@ -275,5 +275,5 @@ export async function adminRevokeSubscription(userId: string) {
     status: 'free',
     expires_at: null,
     updated_at: new Date().toISOString(),
-  })
+  }, { onConflict: 'user_id' })
 }
