@@ -67,6 +67,7 @@ export default function App() {
   const [showSub, setShowSub]       = useState(false)
   const [authMode, setAuthMode]     = useState<'login' | 'register'>('login')
   const [showNudge, setShowNudge]   = useState(false)
+  const [subMode, setSubMode]       = useState<'donate' | 'upgrade'>('donate')
 
   // Show nudge after 5s for anonymous users (once per session)
   useEffect(() => {
@@ -168,7 +169,7 @@ export default function App() {
         session={session}
         onSessionChange={setSession}
         onShowAuth={() => openAuth('login')}
-        onShowSubscription={() => setShowSub(true)}
+        onShowSubscription={() => { setSubMode('donate'); setShowSub(true) }}
       >
         {activeTab === 'dashboard' && (
           <Dashboard draws={draws} onNavigate={navigate} />
@@ -188,12 +189,12 @@ export default function App() {
             onSelectionChange={setDreamSelections}
             isPremium={true}
             onShowAuth={() => openAuth('register')}
-            onShowSubscription={() => setShowSub(true)}
+            onShowSubscription={() => { setSubMode('upgrade'); setShowSub(true) }}
             session={session}
           />
         )}
         {activeTab === 'statistics' && (
-          <Statistics draws={draws} isPremium={true} onShowSubscription={() => setShowSub(true)} />
+          <Statistics draws={draws} isPremium={true} onShowSubscription={() => { setSubMode('upgrade'); setShowSub(true) }} />
         )}
         {activeTab === 'astrology' && (
           <AstrologyPanel profile={astrologyProfile} onProfileChange={setAstrologyProfile} />
@@ -205,7 +206,7 @@ export default function App() {
           <NumberJournal entries={journalEntries} draws={draws} onEntriesChange={setJournalEntries} />
         )}
         {activeTab === 'scanner' && (
-          <NumberScanner session={session} onShowAuth={() => openAuth('register')} onShowSubscription={() => setShowSub(true)} />
+          <NumberScanner session={session} onShowAuth={() => openAuth('register')} onShowSubscription={() => { setSubMode('upgrade'); setShowSub(true) }} />
         )}
         {activeTab === 'admin' && session?.isAdmin && (
           <AdminPanel session={session} />
@@ -230,6 +231,7 @@ export default function App() {
 
       {showSub && (
         <SubscriptionModal
+          mode={subMode}
           onClose={() => setShowSub(false)}
         />
       )}

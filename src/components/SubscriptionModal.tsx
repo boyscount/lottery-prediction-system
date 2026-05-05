@@ -7,10 +7,12 @@ interface Props {
   session?: UserSession | null
   onSuccess?: (session: UserSession) => void
   onClose: () => void
+  mode?: 'donate' | 'upgrade'
 }
 
-export default function DonateModal({ onClose }: Props) {
+export default function DonateModal({ onClose, mode = 'donate' }: Props) {
   const [thanked, setThanked] = useState(false)
+  const isUpgrade = mode === 'upgrade'
 
   function handleDone() {
     setThanked(true)
@@ -47,12 +49,36 @@ export default function DonateModal({ onClose }: Props) {
             <div style={{ textAlign: 'center', marginBottom: 22 }}>
               <Logo size={44} className="anim-float" style={{ display: 'inline-block', marginBottom: 10 }} />
               <div className="nf-bold shimmer" style={{ fontSize: 19, marginBottom: 4 }}>
-                สนับสนุน LottoMind
+                {isUpgrade ? 'อัพเกรดเป็น Premium' : 'สนับสนุน LottoMind'}
               </div>
-              <p style={{ fontSize: 13, color: '#64748b', lineHeight: 1.5 }}>
-                ทุก feature ใช้ฟรี 100%<br />
-                ถ้าชอบและอยากสนับสนุนการพัฒนา — donate ได้เลย 💜
-              </p>
+              {isUpgrade ? (
+                <div>
+                  <p style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.6, marginBottom: 10 }}>
+                    ปลดล็อกฟีเจอร์ทั้งหมด ด้วยการสนับสนุนผู้พัฒนา
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, textAlign: 'left', marginBottom: 4 }}>
+                    {[
+                      '🤖 ตีความฝันด้วย AI',
+                      '📷 สแกนเลขจากรูปด้วย AI',
+                      '🎯 ทำนายเลข 2/3/6 ตัว',
+                      '📊 สถิติขั้นสูง + Heatmap',
+                      '⭐ ดวงประจำเดือน + เลขมงคล',
+                    ].map(f => (
+                      <div key={f} style={{ fontSize: 12, color: '#c4b5fd', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {f}
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 10, fontSize: 13, color: '#f59e0b', fontWeight: 700 }}>
+                    💎 เพียง 59 บาท / เดือน
+                  </div>
+                </div>
+              ) : (
+                <p style={{ fontSize: 13, color: '#64748b', lineHeight: 1.5 }}>
+                  ถ้าชอบและอยากสนับสนุนการพัฒนา<br />
+                  donate ได้เลย ไม่มีขั้นต่ำ 💜
+                </p>
+              )}
             </div>
 
             {/* QR Code */}
@@ -105,7 +131,7 @@ export default function DonateModal({ onClose }: Props) {
               className="btn-primary"
               style={{ borderRadius: 16, padding: '14px 24px', fontSize: 15, width: '100%', marginBottom: 10 }}
             >
-              🙏 โอนแล้ว จะส่ง slip ให้!
+              {isUpgrade ? '💎 โอนแล้ว จะส่ง slip ให้!' : '🙏 โอนแล้ว ขอบคุณ!'}
             </button>
             <button
               onClick={onClose}
@@ -114,7 +140,7 @@ export default function DonateModal({ onClose }: Props) {
                 color: '#374151', fontSize: 13, fontFamily: 'Sarabun, sans-serif', padding: 8,
               }}
             >
-              ไว้คราวหน้า
+              {isUpgrade ? 'ยังไม่อัพเกรด' : 'ไว้คราวหน้า'}
             </button>
 
           </div>
