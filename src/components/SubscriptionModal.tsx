@@ -101,8 +101,8 @@ export default function DonateModal({ onClose, mode = 'donate' }: Props) {
               <div style={{ fontSize: 11, color: '#6b7280' }}>PromptPay · รับได้ทุกธนาคาร</div>
             </div>
 
-            {/* Email instruction */}
-            <div style={{
+            {/* Email instruction — upgrade mode only */}
+            {isUpgrade && <div style={{
               background: 'rgba(124,58,237,0.08)',
               border: '1px solid rgba(124,58,237,0.2)',
               borderRadius: 14, padding: '12px 16px', marginBottom: 16,
@@ -123,7 +123,7 @@ export default function DonateModal({ onClose, mode = 'donate' }: Props) {
                 แจ้งชื่อผู้ใช้ในแอปด้วยนะครับ<br />
                 จะเปิดสิทธิ์ Premium ให้ภายใน 24 ชั่วโมง ✅
               </div>
-            </div>
+            </div>}
 
             {/* Done button */}
             <button
