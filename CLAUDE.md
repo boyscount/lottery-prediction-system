@@ -160,6 +160,7 @@ NODE_ENV=development
 - Users อ่าน/เขียนได้เฉพาะแถวของตัวเอง (`auth.uid() = user_id`)
 - `lottery_draws` — ทุกคนอ่านได้, แก้ไขได้เฉพาะ `is_admin = TRUE`
 - `user_journal` — `FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id)`
+- `subscriptions` — admin จัดการได้ทุก row ผ่าน `is_admin()` function (ต้องรัน SQL เพิ่ม)
 - Service Role Key (backend เท่านั้น) — bypass RLS ทั้งหมด
 
 ### Triggers
@@ -169,8 +170,14 @@ NODE_ENV=development
 ### Setup ใน Supabase Dashboard
 1. ไปที่ **SQL Editor**
 2. วาง `supabase/migrations/001_schema.sql` ทั้งหมด แล้วกด **Run**
-3. ไปที่ **Authentication → Settings** → ปิด "Confirm email" (สำหรับ dev)
-4. สร้าง admin user: ตั้ง `is_admin = TRUE` ใน `profiles` table โดยตรง
+3. รัน SQL เพิ่ม — Admin subscriptions policy:
+   ```sql
+   CREATE POLICY "Admins can manage all subscriptions"
+   ON subscriptions FOR ALL
+   USING (is_admin()) WITH CHECK (is_admin());
+   ```
+4. ไปที่ **Authentication → Settings** → ปิด "Confirm email" (สำหรับ dev)
+5. สร้าง admin user: ตั้ง `is_admin = TRUE` ใน `profiles` table โดยตรง
 
 ---
 
@@ -357,38 +364,47 @@ await supabase.from('user_journal').upsert(rows, { onConflict: 'id' })
 
 ## Payment Flow (`server/index.js`)
 
-### Card Payment
+### ⚠️ หมายเหตุสำคัญ — Omise ไม่ได้ใช้งานจริง
+เว็บทำนายหวยเข้าข่ายการพนัน → ผิด ToS ของ Omise, Stripe, และ payment gateway ทั่วไป  
+**Flow จริงที่ใช้งานในปัจจุบัน = Manual (QR ส่วนตัว + admin grant)**
+
+### Manual Premium Flow (ปัจจุบัน)
 ```
-Frontend → Omise.js tokenize card → POST /api/payment/charge { token }
-Backend → verify Bearer JWT (requireAuth)
-        → omise.charges.create({ card: token, amount: 5900 })
-        → if succeeded → activatePremium(userId) in DB
-        → return { success, chargeId }
+1. user กดปุ่ม "อัพเกรด" → เห็น SubscriptionModal (mode='upgrade')
+2. สแกน QR PromptPay ส่วนตัว → โอนเงิน 59 บาท
+3. ส่ง slip + ชื่อผู้ใช้ มาที่ kimminho.love1103@gmail.com
+4. admin เปิด Admin Panel → แท็บ 👥 ผู้ใช้ → กด "💎 ให้สิทธิ์" → ใส่วัน → ยืนยัน
 ```
 
-### PromptPay
-```
-Frontend → POST /api/payment/promptpay
-Backend → omise.sources.create(promptpay) → omise.charges.create(source)
-        → insert pending payment record
-        → return { qrImage, chargeId, expiresAt }
-Frontend → poll GET /api/payment/status/:chargeId จนกว่าจะ succeeded
+### SubscriptionModal — 2 Modes
+| prop `mode` | เปิดจาก | Title | เนื้อหา |
+|---|---|---|---|
+| `'donate'` | ❤️ ปุ่มสนับสนุนใน header | "สนับสนุน LottoMind" | QR + "donate ได้เลย ไม่มีขั้นต่ำ" |
+| `'upgrade'` | 🔒 paywall ใน feature ต่างๆ | "อัพเกรดเป็น Premium" | QR + feature list + ราคา 59฿ + email box |
+
+```typescript
+// App.tsx — แยก mode ตาม source
+onShowSubscription={() => { setSubMode('donate'); setShowSub(true) }}   // Layout heart
+onShowSubscription={() => { setSubMode('upgrade'); setShowSub(true) }}  // paywall components
 ```
 
-### Webhook (auto-confirm)
-```
-Omise → POST /api/payment/webhook  (event: charge.complete)
-Backend → verify HMAC-SHA256 signature
-        → if status=succeeded → activatePremium(metadata.userId)
-```
+### Admin: Grant Premium
+ใช้ Admin Panel ในแอป (ไม่ต้องแตะ Supabase โดยตรง):
+1. Login ด้วย admin account
+2. แท็บ **🛡️ Admin → 👥 ผู้ใช้**
+3. กด **💎 ให้สิทธิ์** → ใส่จำนวนวัน → **ยืนยัน**
 
-### API Endpoints
+> ⚠️ ต้องรัน SQL เพิ่ม RLS policy ก่อน (ดู Setup section)  
+> ⚠️ `adminSetPremium` และ `adminRevokeSubscription` ต้องใช้ `onConflict: 'user_id'`
+
+### Backend Omise Endpoints (โค้ดพร้อม แต่ไม่ได้ใช้)
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `POST` | `/api/payment/charge` | Bearer JWT | Card payment |
-| `POST` | `/api/payment/promptpay` | Bearer JWT | PromptPay QR |
+| `POST` | `/api/payment/charge` | Bearer JWT | Card payment (Omise) |
+| `POST` | `/api/payment/promptpay` | Bearer JWT | PromptPay QR (Omise) |
 | `GET`  | `/api/payment/status/:id` | Bearer JWT | Poll charge status |
 | `POST` | `/api/payment/webhook` | HMAC signature | Omise webhook |
+| `GET`  | `/api/lottery/latest` | — | Auto-fetch ผลล่าสุด |
 | `POST` | `/api/ai/dream` | **Bearer JWT + Premium** | AI Dream Interpreter |
 | `POST` | `/api/ai/scan`  | **Bearer JWT + Premium** | Vision AI number scanner |
 | `GET`  | `/health` | — | Health check |
@@ -405,6 +421,18 @@ Backend → verify HMAC-SHA256 signature
 - **Users tab**: ตาราง users + subscription status, ปุ่มให้/ถอน Premium (ระบุจำนวนวัน)
 - **Payments tab**: ตาราง payments, จำนวนเงิน, method, status
 - **Summary cards**: จำนวน users, Premium active, การชำระสำเร็จ, รายรับรวม
+
+### RLS Requirement (สำคัญ)
+Admin Panel ใช้ frontend Supabase client (anon key + RLS) — ต้องมี policy พิเศษ:
+```sql
+-- ต้องรันใน Supabase SQL Editor ก่อนใช้งาน Admin Panel
+CREATE POLICY "Admins can manage all subscriptions"
+ON subscriptions FOR ALL
+USING (is_admin())
+WITH CHECK (is_admin());
+```
+> ใช้ `is_admin()` SECURITY DEFINER function (สร้างไว้แล้วใน profiles policy) — ไม่มี recursion  
+> ถ้าไม่มี policy นี้ → กด "💎 ให้สิทธิ์" จะได้ **403 Forbidden**
 
 ---
 
@@ -506,6 +534,75 @@ model: 'claude-haiku-4-5-20251001'
 - ข้อมูลจริงทุก draw: firstPrize, threeDigitFront[2], threeDigitBack[2], twoDigitBack
 - Jan/May draws: date shifts apply (17th, 2nd instead of 16th/1st)
 - **Note**: 2024-10-16 front-3-digit เป็น approximation (verified: 482962, 2d:00)
+
+---
+
+## Auto-Fetch Latest Lottery Result
+
+ทุกครั้งที่ app โหลด จะ fetch ผลล่าสุดจาก external API อัตโนมัติ
+
+### Flow
+```
+App.tsx mount → fetchLatestDraw() → GET /api/lottery/latest
+→ backend fetch lotto.api.rayriffy.com/latest
+→ parse Thai date + prizes → upsert Supabase → return draw
+→ frontend: ถ้า draw.id ยังไม่อยู่ใน state → insert + sort
+```
+
+### Backend: `GET /api/lottery/latest` (`server/index.js`)
+- **Source**: `https://lotto.api.rayriffy.com/latest`
+- **User-Agent**: ต้องใช้ browser UA — Cloudflare block request ธรรมดา (error 1015)
+- **Cache**: in-memory 1 ชั่วโมง (`lotteryCache`) — ไม่ hammer upstream API
+- **upsert**: บันทึกลง Supabase `lottery_draws` อัตโนมัติถ้า `supabaseReady`
+
+### Rayriffy API Response Shape (สำคัญ)
+```javascript
+{
+  status: "success",
+  response: {
+    date: "2 พฤษภาคม 2569",   // ชื่อเดือนเต็มภาษาไทย (ไม่ใช่ย่อ)
+    prizes: [                   // รางวัลหลัก — รางวัลที่ 1 อยู่ที่นี่
+      { id: "prizeFirst", number: ["536077"], ... },
+      ...
+    ],
+    runningNumbers: [           // เลขท้าย — อยู่แยกจาก prizes
+      { id: "runningNumberFrontThree", number: ["267","318"] },
+      { id: "runningNumberBackThree",  number: ["065","153"] },
+      { id: "runningNumberBackTwo",    number: ["43"] },
+    ]
+  }
+}
+```
+
+> ⚠️ **เลขท้าย 3/2 ตัวอยู่ใน `runningNumbers[]` ไม่ใช่ `prizes[]`**
+
+### Date Parsing (`parseLotteryDate`)
+รองรับ 3 format:
+| Format | ตัวอย่าง |
+|--------|---------|
+| Full Thai month (พ.ศ.) | "2 พฤษภาคม 2569" → "2026-05-02" |
+| Short Thai month (พ.ศ.) | "1 เม.ย. 2568" → "2025-04-01" |
+| Slash/dash | "16/04/2568" → "2025-04-16" |
+
+แปลง พ.ศ. → ค.ศ. ด้วย `year > 2500 ? year - 543 : year`
+
+### Frontend: `fetchLatestDraw()` (`src/lib/db.ts`)
+```typescript
+export async function fetchLatestDraw(): Promise<LotteryDraw | null>
+// - call GET /api/lottery/latest with 10s timeout
+// - silent failure (return null) ถ้า backend down
+```
+
+### App.tsx — mount logic
+```typescript
+fetchLatestDraw().then(latest => {
+  if (!latest) return
+  setDraws(prev => {
+    const exists = prev.some(d => d.id === latest.id)
+    if (exists) return prev
+    return [...prev, latest].sort((a, b) => a.date.localeCompare(b.date))
+  })
+})
 
 ---
 
@@ -708,7 +805,9 @@ Output: `twoDigit[]` 8 ตัว · `threeDigit[]` 6 ตัว · `sixDigit[]` 3
 { onSuccess(session), onClose, defaultMode?: 'login' | 'register' }
 
 // SubscriptionModal.tsx
-{ session, onSuccess(session), onClose }
+{ session?, onSuccess?(session), onClose, mode?: 'donate' | 'upgrade' }
+// mode='donate' → สนับสนุน copy (default)
+// mode='upgrade' → feature list + ราคา + email instruction
 
 // PaywallOverlay.tsx
 { session, children, feature?, onLogin, onUpgrade }
@@ -833,7 +932,9 @@ const res = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/charge`, {
 - [ ] Set `FRONTEND_URL` ใน backend env เป็น production domain (กำหนด CORS)
 - [ ] Set `VITE_API_URL` ใน frontend env เป็น backend URL จริง
 - [ ] สร้าง admin user: ตั้ง `is_admin = TRUE` ใน `profiles` table โดยตรง
+- [ ] รัน SQL เพิ่ม admin subscriptions policy (ดู Database Schema → Setup)
 - [ ] ตรวจสอบ `express.json({ limit: '10mb' })` ใน server/index.js (สำหรับ Vision AI)
+- [ ] ตั้งค่า `VITE_API_URL` ใน Vercel env → Railway backend URL
 
 ---
 
@@ -860,3 +961,14 @@ const res = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/charge`, {
 | AI 404 model not found | deprecated claude-3-haiku-20240307 | เปลี่ยนเป็น claude-haiku-4-5-20251001 |
 | omise npm install fail | package version `^2.6.0` ไม่มี | เปลี่ยนเป็น `^1.1.0` |
 | OTP expired URL hash | เปิด email link เก่า | useEffect ล้าง error hash จาก URL |
+| lottery date parse ไม่ได้ | API ส่งชื่อเดือนเต็ม "พฤษภาคม" ไม่ใช่ย่อ | เพิ่ม full Thai month map ใน parseLotteryDate |
+| lottery เลขท้าย 3/2 ตัวหาย | อยู่ใน `runningNumbers[]` ไม่ใช่ `prizes[]` | เปลี่ยน lookup ไปที่ `runningNumbers` |
+| rayriffy API 1015 (Cloudflare) | User-Agent "LottoMind/1.0" ถูก block | เปลี่ยนเป็น Chrome browser UA |
+| Admin "ให้สิทธิ์" 403 Forbidden | RLS block admin จากการแก้ subscription คนอื่น | เพิ่ม policy `USING (is_admin())` บน subscriptions |
+| Admin upsert insert แทน update | ไม่ได้ระบุ `onConflict` | เพิ่ม `{ onConflict: 'user_id' }` ทั้ง 2 functions |
+
+### Deployed URLs
+| Service | URL |
+|---------|-----|
+| Frontend | Vercel — `https://lottery-prediction-system-2asg.vercel.app` |
+| Backend | Railway — `https://lottery-prediction-system-production.up.railway.app` |
