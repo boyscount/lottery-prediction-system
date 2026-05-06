@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { UserSession } from '../types'
 import { isPremium } from '../utils/auth'
 
@@ -18,15 +18,89 @@ interface Props {
 }
 
 export default function NumberScanner({ session, onShowAuth, onShowSubscription }: Props) {
-  const [preview, setPreview]       = useState<string | null>(null)
-  const [loading, setLoading]       = useState(false)
-  const [result, setResult]         = useState<ScanResult | null>(null)
-  const [error, setError]           = useState('')
-  const [isDragging, setIsDragging] = useState(false)
-  const fileInputRef                = useRef<HTMLInputElement>(null)
-  const cameraInputRef              = useRef<HTMLInputElement>(null)
+  const [preview, setPreview]         = useState<string | null>(null)
+  const [loading, setLoading]         = useState(false)
+  const [result, setResult]           = useState<ScanResult | null>(null)
+  const [error, setError]             = useState('')
+  const [isDragging, setIsDragging]   = useState(false)
+  const [cameraOpen, setCameraOpen]   = useState(false)
+  const [cameraError, setCameraError] = useState('')
+  const fileInputRef                  = useRef<HTMLInputElement>(null)
+  const videoRef                      = useRef<HTMLVideoElement>(null)
+  const streamRef                     = useRef<MediaStream | null>(null)
+
+  // Start camera stream
+  async function openCamera() {
+    setCameraError('')
+    setCameraOpen(true)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        videoRef.current.play()
+      }
+    } catch {
+      setCameraError('ไม่สามารถเปิดกล้องได้ กรุณาอนุญาต permission กล้องในเบราว์เซอร์')
+    }
+  }
+
+  // Stop camera stream
+  function closeCamera() {
+    streamRef.current?.getTracks().forEach(t => t.stop())
+    streamRef.current = null
+    setCameraOpen(false)
+    setCameraError('')
+  }
+
+  // Capture frame from video
+  function capturePhoto() {
+    const video = videoRef.current
+    if (!video) return
+    const canvas = document.createElement('canvas')
+    canvas.width  = video.videoWidth  || 1280
+    canvas.height = video.videoHeight || 720
+    canvas.getContext('2d')?.drawImage(video, 0, 0)
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
+    closeCamera()
+    setPreview(dataUrl)
+    // Process immediately
+    const base64 = dataUrl.split(',')[1]
+    sendToApi(base64, 'image/jpeg')
+  }
+
+  // Cleanup on unmount
+  useEffect(() => () => { streamRef.current?.getTracks().forEach(t => t.stop()) }, [])
 
   const userIsPremium = isPremium(session ?? null)
+
+  const sendToApi = useCallback(async (base64: string, mimeType: string) => {
+    setLoading(true)
+    setError('')
+    setResult(null)
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.token) headers['Authorization'] = `Bearer ${session.token}`
+      const res = await fetch(`${API_URL}/api/ai/scan`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ imageBase64: base64, mimeType }),
+      })
+      if (res.status === 401) { setError('กรุณาเข้าสู่ระบบก่อนใช้ฟีเจอร์นี้'); return }
+      if (res.status === 403) { setError('ฟีเจอร์นี้สำหรับสมาชิก Premium เท่านั้น'); return }
+      if (!res.ok) throw new Error(`Server error ${res.status}`)
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setResult(data)
+    } catch (err: any) {
+      setError('ไม่สามารถวิเคราะห์ภาพได้: ' + (err.message || 'ลองใหม่อีกครั้ง'))
+    } finally {
+      setLoading(false)
+    }
+  }, [session])
 
   const processFile = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -37,48 +111,16 @@ export default function NumberScanner({ session, onShowAuth, onShowSubscription 
       setError('ไฟล์ใหญ่เกินไป (สูงสุด 5 MB)')
       return
     }
-
     setError('')
     setResult(null)
-
-    // Preview
     const reader = new FileReader()
-    reader.onload = (e) => setPreview(e.target?.result as string)
-    reader.readAsDataURL(file)
-
-    // Convert to base64 for API
-    const base64Reader = new FileReader()
-    base64Reader.onload = async (e) => {
+    reader.onload = (e) => {
       const dataUrl = e.target?.result as string
-      const base64  = dataUrl.split(',')[1]
-      const mimeType = file.type
-
-      setLoading(true)
-      try {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-        // ส่ง Bearer token เสมอถ้า login อยู่ — backend verify premium
-        if (session?.token) headers['Authorization'] = `Bearer ${session.token}`
-
-        const res = await fetch(`${API_URL}/api/ai/scan`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ imageBase64: base64, mimeType }),
-        })
-
-        if (res.status === 401) { setError('กรุณาเข้าสู่ระบบก่อนใช้ฟีเจอร์นี้'); return }
-        if (res.status === 403) { setError('ฟีเจอร์นี้สำหรับสมาชิก Premium เท่านั้น'); return }
-        if (!res.ok) throw new Error(`Server error ${res.status}`)
-        const data = await res.json()
-        if (data.error) throw new Error(data.error)
-        setResult(data)
-      } catch (err: any) {
-        setError('ไม่สามารถวิเคราะห์ภาพได้: ' + (err.message || 'ลองใหม่อีกครั้ง'))
-      } finally {
-        setLoading(false)
-      }
+      setPreview(dataUrl)
+      sendToApi(dataUrl.split(',')[1], file.type)
     }
-    base64Reader.readAsDataURL(file)
-  }, [session])
+    reader.readAsDataURL(file)
+  }, [sendToApi])
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -97,7 +139,6 @@ export default function NumberScanner({ session, onShowAuth, onShowSubscription 
     setResult(null)
     setError('')
     if (fileInputRef.current) fileInputRef.current.value = ''
-    if (cameraInputRef.current) cameraInputRef.current.value = ''
   }
 
   // ── Paywall: ไม่ได้ login ─────────────────────────────────────
@@ -222,7 +263,7 @@ export default function NumberScanner({ session, onShowAuth, onShowSubscription 
             🖼️ เลือกจากแกลเลอรี
           </button>
           <button
-            onClick={() => cameraInputRef.current?.click()}
+            onClick={openCamera}
             className="btn-primary press"
             style={{ padding: '11px 16px', fontSize: 13, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
           >
@@ -231,9 +272,58 @@ export default function NumberScanner({ session, onShowAuth, onShowSubscription 
         </div>
       )}
 
-      {/* Hidden file inputs */}
+      {/* Hidden file input (gallery only) */}
       <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
-      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} style={{ display: 'none' }} />
+
+      {/* ── In-app Camera Modal ── */}
+      {cameraOpen && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 100,
+          background: 'rgba(0,0,0,0.95)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          gap: 16, padding: 16,
+        }}>
+          {cameraError ? (
+            <div style={{ textAlign: 'center', padding: 32 }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>📵</div>
+              <div style={{ color: '#f87171', fontSize: 14, marginBottom: 20 }}>{cameraError}</div>
+              <button onClick={closeCamera} className="btn-ghost"
+                style={{ borderRadius: 12, padding: '10px 24px', fontSize: 13 }}>
+                ปิด
+              </button>
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: 13, color: '#94a3b8' }}>จัดเฟรมให้ตัวเลขอยู่ตรงกลาง แล้วกดถ่าย</div>
+              <div style={{ position: 'relative', width: '100%', maxWidth: 480, borderRadius: 16, overflow: 'hidden', border: '2px solid rgba(124,58,237,0.5)' }}>
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  style={{ width: '100%', display: 'block', maxHeight: '60dvh', objectFit: 'cover' }}
+                />
+                {/* Viewfinder guide */}
+                <div style={{
+                  position: 'absolute', inset: '20%',
+                  border: '2px solid rgba(124,58,237,0.7)',
+                  borderRadius: 8, pointerEvents: 'none',
+                }} />
+              </div>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button onClick={closeCamera} className="btn-ghost"
+                  style={{ borderRadius: 14, padding: '12px 24px', fontSize: 14 }}>
+                  ยกเลิก
+                </button>
+                <button onClick={capturePhoto} className="btn-primary press"
+                  style={{ borderRadius: 14, padding: '12px 36px', fontSize: 15, fontWeight: 700 }}>
+                  📸 ถ่าย
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Preview */}
       {preview && (
@@ -259,11 +349,16 @@ export default function NumberScanner({ session, onShowAuth, onShowSubscription 
               style={{ flex: 1, padding: '9px 0', fontSize: 13, borderRadius: 10 }}>
               🔄 เปลี่ยนรูป
             </button>
-            {!loading && !result && (
+            {!loading && !result && preview && (
               <button
                 onClick={() => {
-                  if (fileInputRef.current?.files?.[0]) processFile(fileInputRef.current.files[0])
-                  else if (cameraInputRef.current?.files?.[0]) processFile(cameraInputRef.current.files[0])
+                  const file = fileInputRef.current?.files?.[0]
+                  if (file) processFile(file)
+                  else if (preview) {
+                    // re-send from preview (camera capture)
+                    const base64 = preview.split(',')[1]
+                    sendToApi(base64, 'image/jpeg')
+                  }
                 }}
                 className="btn-primary press"
                 style={{ flex: 1, padding: '9px 0', fontSize: 13, borderRadius: 10 }}
